@@ -18,9 +18,8 @@ function getSecondsUntilMidnight(): number {
 app.use("/api/*", async (c, next) => {
   const allowedOrigins = [
     "https://reru-nc-ranking.onrender.com",
-    "https://rmrobb1e.github.io/reru-nc-ranking",
+    "https://rmrobb1e.github.io",
   ];
-
   const origin = c.req.header("Origin");
   if (origin && allowedOrigins.includes(origin)) {
     c.header("Access-Control-Allow-Origin", origin);
