@@ -30,6 +30,11 @@ app.get("/api/giphy-key", (c) => {
   return c.json({ apiKey: c.env.GIPHY_API_KEY });
 });
 
+// GET /api/health
+app.get("/api/health", (c) => {
+  return c.json({ status: "ok" });
+});
+
 // GET /api/metadata
 app.get("/api/metadata", (c) => {
   const data = {
