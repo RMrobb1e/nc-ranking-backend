@@ -20,6 +20,7 @@ app.use("/api/*", async (c, next) => {
   const allowedOrigins = [
     "https://reru-nc-ranking.onrender.com",
     "https://rmrobb1e.github.io",
+    "https://reru-nc-ranking.vercel.app",
   ];
   const origin = c.req.header("Origin");
   if (origin && allowedOrigins.includes(origin)) {
