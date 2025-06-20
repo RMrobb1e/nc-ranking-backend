@@ -23,6 +23,10 @@ app.use("/api/*", async (c, next) => {
     "https://reru-nc-ranking.onrender.com",
     "https://rmrobb1e.github.io",
     "https://reru-nc-ranking.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
   ];
   const origin = c.req.header("Origin");
   if (origin && allowedOrigins.includes(origin)) {
@@ -70,7 +74,11 @@ app.get("/api/growth", async (c) => {
   )}&rankingType=growth`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        Referer: "https://www.nightcrows.com/en/ranking/level",
+      },
+    });
     const data = await response.json();
     // Remove _nextI18Next if it exists
     const d = data as {
@@ -90,12 +98,17 @@ app.get("/api/growth", async (c) => {
   }
 });
 
-// GET /api/growth-top-100
-app.get("/api/growth-top-100", async (c) => {
+// GET /api/growth-page?page=&regionCode=
+app.get("/api/growth-page", async (c) => {
+  const page = c.req.query("page") ?? "1";
   const regionCode = c.req.query("regionCode") ?? "0";
-  const url = `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}`;
+  const url = `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}`;
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        Referer: "https://www.nightcrows.com/en/ranking/level",
+      },
+    });
     const data = await response.json();
     // Remove _nextI18Next if it exists
     const d = data as {
@@ -108,15 +121,53 @@ app.get("/api/growth-top-100", async (c) => {
     if (d.pageProps && "_nextI18Next" in d.pageProps) {
       delete d.pageProps._nextI18Next;
     }
-    // Filter by regionCode if provided
-    if (regionCode && d.pageProps?.rankingListData?.items) {
-      d.pageProps.rankingListData.items =
-        d.pageProps.rankingListData.items.filter(
-          (item: any) => String(item.RegionID) === String(regionCode),
-        );
-    }
     return c.json(data);
   } catch (e) {
+    console.log(e);
+    return c.json({ error: "Failed to fetch data" }, 500);
+  }
+});
+
+// GET /api/growth-top-1000
+app.get("/api/growth-top-1000", async (c) => {
+  const regionCode = c.req.query("regionCode") ?? "0";
+  const cacheKey = `growth-top-1000-${regionCode}`;
+  if (cache.has(cacheKey)) {
+    return c.json(cache.get(cacheKey));
+  }
+  const allItems: any[] = [];
+  try {
+    for (let page = 1; page <= 10; page++) {
+      const url = `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}`;
+      const response = await fetch(url, {
+        headers: {
+          Referer: "https://www.nightcrows.com/en/ranking/level",
+        },
+      });
+      const data = await response.json();
+      // Remove _nextI18Next if it exists
+      const d = data as {
+        pageProps?: {
+          _nextI18Next?: unknown;
+          [key: string]: unknown;
+          rankingListData?: { items?: any[] };
+        };
+      };
+      if (d.pageProps && "_nextI18Next" in d.pageProps) {
+        delete d.pageProps._nextI18Next;
+      }
+      if (d.pageProps?.rankingListData?.items) {
+        allItems.push(...d.pageProps.rankingListData.items);
+      }
+    }
+    // Return only the top 1000 items (if more than 1000 are fetched)
+    const result = { items: allItems.slice(0, 1000) };
+    const ttl = getSecondsUntilMidnight();
+    cache.set(cacheKey, result);
+    setTimeout(() => cache.delete(cacheKey), ttl * 1000);
+    return c.json(result);
+  } catch (e) {
+    console.log(e);
     return c.json({ error: "Failed to fetch data" }, 500);
   }
 });
