@@ -61,7 +61,7 @@ app.get("/api/growth", async (c) => {
     return c.json(cache.get(cacheKey));
   }
 
-  const url = `https://www.nightcrows.com/_next/data/gS2eBBlYqbNdFFZodjSYl/en/ranking/growth.json?regionCode=${regionCode}&weaponType=0&wmsso_sign=check&keyword=${encodeURIComponent(
+  const url = `https://www.nightcrows.com/_next/data/RurW1g27YvYnU6QRxphBf/en/ranking/growth.json?regionCode=${regionCode}&weaponType=0&wmsso_sign=check&keyword=${encodeURIComponent(
     ign,
   )}&rankingType=growth`;
 
