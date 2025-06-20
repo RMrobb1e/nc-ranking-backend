@@ -1,3 +1,4 @@
+import { regions, weaponTypes, rankingTypes } from "./utils/constants";
 import { Hono } from "hono";
 
 type Env = {
@@ -43,9 +44,9 @@ app.get("/api/health", (c) => {
 // GET /api/metadata
 app.get("/api/metadata", (c) => {
   const data = {
-    regions: ["Region1", "Region2"], // Replace with your real constants
-    weaponTypes: ["Sword", "Bow"], // Replace with your real constants
-    rankingTypes: ["growth", "power"],
+    regions,
+    weaponTypes,
+    rankingTypes,
   };
   return c.json(data);
 });
@@ -68,6 +69,15 @@ app.get("/api/growth", async (c) => {
   try {
     const response = await fetch(url);
     const data = await response.json();
+    // Remove _nextI18Next if it exists
+    const d = data as {
+      pageProps?: { _nextI18Next?: unknown; [key: string]: unknown };
+    };
+
+    if (d.pageProps && "_nextI18Next" in d.pageProps) {
+      delete d.pageProps._nextI18Next;
+    }
+
     const ttl = getSecondsUntilMidnight();
     cache.set(cacheKey, data);
     setTimeout(() => cache.delete(cacheKey), ttl * 1000);
