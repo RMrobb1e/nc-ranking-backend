@@ -172,12 +172,13 @@ app.get("/api/growth-top-1000", async (c) => {
   }
 });
 
-
 app.get("/api/growth-top-players", async (c) => {
   // Import regions and weaponTypes from constants
   // (already imported at the top)
   const regionCodeParam = c.req.query("regionCode");
-  const cacheKey = regionCodeParam ? `growth-top-players-${regionCodeParam}` : `growth-top-players`;
+  const cacheKey = regionCodeParam
+    ? `growth-top-players-${regionCodeParam}`
+    : `growth-top-players`;
   if (cache.has(cacheKey)) {
     return c.json(cache.get(cacheKey));
   }
@@ -186,7 +187,8 @@ app.get("/api/growth-top-players", async (c) => {
     for (const region of regions) {
       const regionCode = region.code;
       if (regionCode === 0) continue; // skip 'ALL' region
-      if (regionCodeParam && String(regionCode) !== String(regionCodeParam)) continue;
+      if (regionCodeParam && String(regionCode) !== String(regionCodeParam))
+        continue;
       for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
         if (weaponTypeName === "All") continue; // skip 'All' weapon type
         // Fetch all 10 pages in parallel for this region/weaponType
@@ -198,9 +200,11 @@ app.get("/api/growth-top-players", async (c) => {
               Referer: "https://www.nightcrows.com/en/ranking/level",
             },
           })
-            .then(async response => {
+            .then(async (response) => {
               if (!response.ok) {
-                console.error(`Failed to fetch: ${url} (status: ${response.status})`);
+                console.error(
+                  `Failed to fetch: ${url} (status: ${response.status})`,
+                );
                 return [];
               }
               const data = await response.json();
@@ -217,7 +221,7 @@ app.get("/api/growth-top-players", async (c) => {
               }
               return d.pageProps?.rankingListData?.items || [];
             })
-            .catch(err => {
+            .catch((err) => {
               console.error(`Error fetching: ${url}`, err);
               return [];
             });
@@ -250,6 +254,5 @@ app.get("/api/growth-top-players", async (c) => {
     return c.json({ error: "Failed to fetch data" }, 500);
   }
 });
-
 
 export default app;
