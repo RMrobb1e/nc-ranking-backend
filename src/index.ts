@@ -172,4 +172,79 @@ app.get("/api/growth-top-1000", async (c) => {
   }
 });
 
+
+app.get("/api/growth-top-players", async (c) => {
+  // Import regions and weaponTypes from constants
+  // (already imported at the top)
+  const cacheKey = `growth-top-players`;
+  if (cache.has(cacheKey)) {
+    return c.json(cache.get(cacheKey));
+  }
+  const allItems: any[] = [];
+  try {
+    for (const region of regions) {
+      const regionCode = region.code;
+      if (regionCode === 0) continue; // skip 'ALL' region
+      for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
+        if (weaponTypeName === "All") continue; // skip 'All' weapon type
+        // Fetch all 10 pages in parallel for this region/weaponType
+        const fetches = Array.from({ length: 10 }, (_, i) => {
+          const page = i + 1;
+          const url = `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}&weaponType=${weaponType}`;
+          return fetch(url, {
+            headers: {
+              Referer: "https://www.nightcrows.com/en/ranking/level",
+            },
+          })
+            .then(async response => {
+              if (!response.ok) {
+                console.error(`Failed to fetch: ${url} (status: ${response.status})`);
+                return [];
+              }
+              const data = await response.json();
+              // Remove _nextI18Next if it exists
+              const d = data as {
+                pageProps?: {
+                  _nextI18Next?: unknown;
+                  [key: string]: unknown;
+                  rankingListData?: { items?: any[] };
+                };
+              };
+              if (d.pageProps && "_nextI18Next" in d.pageProps) {
+                delete d.pageProps._nextI18Next;
+              }
+              return d.pageProps?.rankingListData?.items || [];
+            })
+            .catch(err => {
+              console.error(`Error fetching: ${url}`, err);
+              return [];
+            });
+        });
+        const pagesItems = await Promise.all(fetches);
+        for (const items of pagesItems) {
+          allItems.push(...items);
+        }
+      }
+    }
+    // Normalize and remove duplicate CharacterName across all items
+    const seen = new Set();
+    const uniqueItems = [];
+    for (const item of allItems) {
+      if (item.CharacterName && !seen.has(item.CharacterName)) {
+        seen.add(item.CharacterName);
+        uniqueItems.push(item);
+      }
+    }
+    const result = { items: uniqueItems };
+    const ttl = getSecondsUntilMidnight();
+    cache.set(cacheKey, result);
+    setTimeout(() => cache.delete(cacheKey), ttl * 1000);
+    return c.json(result);
+  } catch (e) {
+    console.log(e);
+    return c.json({ error: "Failed to fetch data" }, 500);
+  }
+});
+
+
 export default app;
