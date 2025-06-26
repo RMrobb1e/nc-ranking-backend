@@ -176,7 +176,8 @@ app.get("/api/growth-top-1000", async (c) => {
 app.get("/api/growth-top-players", async (c) => {
   // Import regions and weaponTypes from constants
   // (already imported at the top)
-  const cacheKey = `growth-top-players`;
+  const regionCodeParam = c.req.query("regionCode");
+  const cacheKey = regionCodeParam ? `growth-top-players-${regionCodeParam}` : `growth-top-players`;
   if (cache.has(cacheKey)) {
     return c.json(cache.get(cacheKey));
   }
@@ -185,6 +186,7 @@ app.get("/api/growth-top-players", async (c) => {
     for (const region of regions) {
       const regionCode = region.code;
       if (regionCode === 0) continue; // skip 'ALL' region
+      if (regionCodeParam && String(regionCode) !== String(regionCodeParam)) continue;
       for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
         if (weaponTypeName === "All") continue; // skip 'All' weapon type
         // Fetch all 10 pages in parallel for this region/weaponType
@@ -235,6 +237,8 @@ app.get("/api/growth-top-players", async (c) => {
         uniqueItems.push(item);
       }
     }
+    // Sort by score descending
+    uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     const result = { items: uniqueItems };
     const ttl = getSecondsUntilMidnight();
     cache.set(cacheKey, result);
