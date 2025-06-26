@@ -228,12 +228,13 @@ app.get("/api/growth-top-players", async (c) => {
         }
       }
     }
-    // Normalize and remove duplicate CharacterName across all items
+    // Normalize and remove duplicates based on RegionID and CharacterName
     const seen = new Set();
     const uniqueItems = [];
     for (const item of allItems) {
-      if (item.CharacterName && !seen.has(item.CharacterName)) {
-        seen.add(item.CharacterName);
+      const key = `${item.RegionID}-${item.CharacterName}`;
+      if (item.CharacterName && item.RegionID && !seen.has(key)) {
+        seen.add(key);
         uniqueItems.push(item);
       }
     }
