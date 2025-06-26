@@ -1,3 +1,43 @@
+// Helper to limit concurrent fetches
+async function limitedParallelFetches(
+  urls: string[],
+  fetchOptions: RequestInit,
+  limit = 3,
+) {
+  const results: any[] = [];
+  let i = 0;
+  async function next() {
+    if (i >= urls.length) return;
+    const idx = i++;
+    try {
+      const response = await fetch(urls[idx], fetchOptions);
+      if (!response.ok) {
+        console.error(
+          `Failed to fetch: ${urls[idx]} (status: ${response.status})`,
+        );
+        results[idx] = [];
+      } else {
+        const data = await response.json();
+        const d = data as {
+          pageProps?: {
+            _nextI18Next?: unknown;
+            [key: string]: unknown;
+            rankingListData?: { items?: any[] };
+          };
+        };
+        if (d.pageProps && "_nextI18Next" in d.pageProps)
+          delete d.pageProps._nextI18Next;
+        results[idx] = d.pageProps?.rankingListData?.items || [];
+      }
+    } catch (err) {
+      console.error(`Error fetching: ${urls[idx]}`, err);
+      results[idx] = [];
+    }
+    await next();
+  }
+  await Promise.all(Array.from({ length: limit }, next));
+  return results;
+}
 import { regions, weaponTypes, rankingTypes } from "./utils/constants";
 import { Hono } from "hono";
 
@@ -191,42 +231,21 @@ app.get("/api/growth-top-players", async (c) => {
         continue;
       for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
         if (weaponTypeName === "All") continue; // skip 'All' weapon type
-        // Fetch all 10 pages in parallel for this region/weaponType
-        const fetches = Array.from({ length: 10 }, (_, i) => {
-          const page = i + 1;
-          const url = `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}&weaponType=${weaponType}`;
-          return fetch(url, {
-            headers: {
-              Referer: "https://www.nightcrows.com/en/ranking/level",
-            },
-          })
-            .then(async (response) => {
-              if (!response.ok) {
-                console.error(
-                  `Failed to fetch: ${url} (status: ${response.status})`,
-                );
-                return [];
-              }
-              const data = await response.json();
-              // Remove _nextI18Next if it exists
-              const d = data as {
-                pageProps?: {
-                  _nextI18Next?: unknown;
-                  [key: string]: unknown;
-                  rankingListData?: { items?: any[] };
-                };
-              };
-              if (d.pageProps && "_nextI18Next" in d.pageProps) {
-                delete d.pageProps._nextI18Next;
-              }
-              return d.pageProps?.rankingListData?.items || [];
-            })
-            .catch((err) => {
-              console.error(`Error fetching: ${url}`, err);
-              return [];
-            });
-        });
-        const pagesItems = await Promise.all(fetches);
+        // Fetch all 10 pages in parallel for this region/weaponType, but limit concurrency
+        const urls = Array.from(
+          { length: 10 },
+          (_, i) =>
+            `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
+              i + 1
+            }&weaponType=${weaponType}`,
+        );
+        const pagesItems = await limitedParallelFetches(
+          urls,
+          {
+            headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
+          },
+          3, // limit to 3 concurrent fetches
+        );
         for (const items of pagesItems) {
           allItems.push(...items);
         }
