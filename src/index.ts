@@ -207,7 +207,11 @@ app.get("/api/growth-top-1000", async (c) => {
     setTimeout(() => cache.delete(cacheKey), ttl * 1000);
     return c.json(result);
   } catch (e) {
-    console.log(e);
+    console.log({
+      error: "Failed to fetch data",
+      details: e instanceof Error ? e.message : String(e),
+      e,
+    });
     return c.json({ error: "Failed to fetch data" }, 500);
   }
 });
