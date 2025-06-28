@@ -445,7 +445,7 @@ app.post("/api/growth-top-players-warm", async (c) => {
     const host = c.req.header("Host") || "localhost:8787";
     const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
     const url = `${protocol}://${host}/api/growth-warm-batch?batch=1`;
-    await fetch(url, { method: "GET" });
+    c.executionCtx.waitUntil(fetch(url, { method: "GET" }));
     return c.json({ status: "Batch warming started." });
   } catch (e) {
     console.error("Error in /api/growth-top-players-warm:", e);
