@@ -228,7 +228,8 @@ app.get("/api/growth-page", async (c) => {
 // Batch warming endpoint must be after app declaration
 app.get("/api/growth-warm-batch", async (c) => {
   // Add a short delay before reading/writing to KV to help with Cloudflare KV propagation
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
   await sleep(250); // 250ms delay for debugging
   const batchParam = c.req.query("batch") || "1";
   const batch = parseInt(batchParam, 10);
@@ -242,9 +243,13 @@ app.get("/api/growth-warm-batch", async (c) => {
   const end = Math.min(start + BATCH_SIZE, combos.length);
   const batchCombos = combos.slice(start, end);
   console.log(
-    `[warm-batch] Starting batch ${batch}/${totalBatches} [combos ${start} to ${end - 1}] at ${new Date().toISOString()}`,
+    `[warm-batch] Starting batch ${batch}/${totalBatches} [combos ${start} to ${
+      end - 1
+    }] at ${new Date().toISOString()}`,
   );
-  console.log(`[warm-batch] combos.length: ${combos.length}, start: ${start}, end: ${end}, batchCombos.length: ${batchCombos.length}`);
+  console.log(
+    `[warm-batch] combos.length: ${combos.length}, start: ${start}, end: ${end}, batchCombos.length: ${batchCombos.length}`,
+  );
   if (batchCombos.length === 0) {
     console.warn(`[warm-batch] Batch ${batch} has no combos to process!`);
   }
@@ -441,6 +446,69 @@ app.get("/api/growth-top-players", async (c) => {
     },
     503,
   );
+});
+
+// POST /api/growth-top-players-warm-batch?batch=N
+app.post("/api/growth-top-players-warm-batch", async (c) => {
+  const batch = parseInt(c.req.query("batch") ?? "0", 10);
+  const weaponTypeEntries = Object.entries(weaponTypes).filter(
+    ([name]) => name !== "All",
+  );
+  const regionCodes = regions.map((r) => r.code).filter((code) => code !== 0);
+  const combos = [];
+  for (const [_, weaponType] of weaponTypeEntries) {
+    for (const regionCode of regionCodes) {
+      combos.push({ regionCode, weaponType });
+    }
+  }
+  const combosPerBatch = 5; // each combo = 10 pages = 10 requests
+  const totalBatches = Math.ceil(combos.length / combosPerBatch);
+  const current = combos.slice(
+    batch * combosPerBatch,
+    (batch + 1) * combosPerBatch,
+  );
+  let totalFetched = 0;
+  let allItems = [];
+  for (const { regionCode, weaponType } of current) {
+    const urls = Array.from(
+      { length: 10 },
+      (_, i) =>
+        `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
+          i + 1
+        }&weaponType=${weaponType}`,
+    );
+    const pagesItems = await limitedParallelFetches(
+      urls,
+      {
+        headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
+      },
+      3,
+    );
+    totalFetched += pagesItems.flat().length;
+    allItems.push(...pagesItems.flat());
+  }
+  // Save this batch's items to Cloudflare KV
+  const batchCacheKey = `growth-warm-batch-alt-${batch}`;
+  const ttl = getSecondsUntilMidnight();
+  await setCache(batchCacheKey, { items: allItems }, ttl, c);
+  // Optionally trigger next batch
+  let status = `Batch ${
+    batch + 1
+  } of ${totalBatches} complete. Fetched ${totalFetched} items.`;
+  if (batch + 1 < totalBatches) {
+    // Trigger next batch recursively (optional)
+    const host = c.req.header("Host") || "localhost:8787";
+    const protocol =
+      host.startsWith("localhost") || host.startsWith("127.0.0.1")
+        ? "http"
+        : "https";
+    const nextBatchUrl = `${protocol}://${host}/api/growth-top-players-warm-batch?batch=${
+      batch + 1
+    }`;
+    await fetch(nextBatchUrl, { method: "POST" });
+    status += ` Triggered batch ${batch + 2}.`;
+  }
+  return c.json({ status, batch: batch + 1, totalFetched });
 });
 
 export default app;
