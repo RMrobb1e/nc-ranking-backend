@@ -277,7 +277,7 @@ app.get("/api/growth-warm-batch", async (c) => {
     const host = c.req.header("Host") || "localhost:8787";
     const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
     const nextBatchUrl = `${protocol}://${host}/api/growth-warm-batch?batch=${batch + 1}`;
-    await fetch(nextBatchUrl, { method: "GET" });
+    c.executionCtx.waitUntil(fetch(nextBatchUrl, { method: "GET" }));
     status += ` Triggered batch ${batch + 1}.`;
   } else {
     // On last batch, normalize, dedupe, sort, and cache
