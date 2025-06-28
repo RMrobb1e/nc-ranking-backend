@@ -1,3 +1,83 @@
+// Cloudflare Workers scheduled() handler for cron triggers
+export async function scheduled(event: ScheduledEvent, env: any, ctx: any) {
+  // Call the same logic as the warm-up endpoint
+  // We create a mock context object for setCache/getCache
+  const cacheKey = "growth-top-players-ALL";
+  const allItems = [];
+  try {
+    for (const region of regions) {
+      const regionCode = region.code;
+      if (regionCode === 0) continue;
+      for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
+        if (weaponTypeName === "All") continue;
+        const urls = Array.from(
+          { length: 10 },
+          (_, i) =>
+            `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
+              i + 1
+            }&weaponType=${weaponType}`,
+        );
+        const pagesItems = await limitedParallelFetches(
+          urls,
+          {
+            headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
+          },
+          3,
+        );
+        for (const items of pagesItems) {
+          allItems.push(...items);
+        }
+      }
+    }
+    const seen = new Set();
+    const uniqueItems = [];
+    for (const item of allItems) {
+      const normalizedName =
+        typeof item.CharacterName === "string"
+          ? item.CharacterName.normalize("NFC")
+          : item.CharacterName;
+      const key = `${item.RegionID}-${normalizedName}`;
+      if (normalizedName && item.RegionID && !seen.has(key)) {
+        seen.add(key);
+        uniqueItems.push({ ...item, CharacterName: normalizedName });
+      }
+    }
+    uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const result = { items: uniqueItems };
+    const now = new Date();
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    const ttl = Math.floor((midnight.getTime() - now.getTime()) / 1000);
+    await setCache(cacheKey, result, ttl, { env });
+    // No return needed for scheduled handler
+  } catch (e) {
+    // Optionally log error
+    // console.log("Scheduled warm-up failed", e);
+  }
+}
+
+// Helper to get/set cache, using KV if available (Cloudflare Workers)
+async function getCache(key: string, c: any) {
+  if (typeof c.env !== "undefined" && c.env.KV) {
+    const value = await c.env.KV.get(key, "json");
+    return value;
+  }
+  return cache.get(key);
+}
+
+async function setCache(key: string, value: any, ttlSeconds: number, c: any) {
+  if (typeof c.env !== "undefined" && c.env.KV) {
+    await c.env.KV.put(key, JSON.stringify(value), {
+      expirationTtl: ttlSeconds,
+    });
+    return;
+  }
+  cache.set(key, value);
+  setTimeout(() => cache.delete(key), ttlSeconds * 1000);
+}
+
+// --- Place warm-up and cache endpoints after getCache/setCache ---
+
 // Helper to limit concurrent fetches
 async function limitedParallelFetches(
   urls: string[],
@@ -216,26 +296,32 @@ app.get("/api/growth-top-1000", async (c) => {
   }
 });
 
+// Serve only cached data for all top players (must be after getCache is defined)
 app.get("/api/growth-top-players", async (c) => {
-  // Import regions and weaponTypes from constants
-  // (already imported at the top)
-  const regionCodeParam = c.req.query("regionCode");
-  const cacheKey = regionCodeParam
-    ? `growth-top-players-${regionCodeParam}`
-    : `growth-top-players`;
-  if (cache.has(cacheKey)) {
-    return c.json(cache.get(cacheKey));
+  const cacheKey = "growth-top-players-ALL";
+  const cached = await getCache(cacheKey, c);
+  if (cached) {
+    return c.json(cached);
   }
-  const allItems: any[] = [];
+  return c.json(
+    {
+      error:
+        "Cache not warmed. Please POST to /api/growth-top-players-warm first.",
+    },
+    503,
+  );
+});
+
+// WARM-UP ENDPOINT: Precompute and cache all top players for all regions and weapon types
+app.post("/api/growth-top-players-warm", async (c) => {
+  const cacheKey = "growth-top-players-ALL";
+  const allItems = [];
   try {
     for (const region of regions) {
       const regionCode = region.code;
       if (regionCode === 0) continue; // skip 'ALL' region
-      if (regionCodeParam && String(regionCode) !== String(regionCodeParam))
-        continue;
       for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
         if (weaponTypeName === "All") continue; // skip 'All' weapon type
-        // Fetch all 10 pages in parallel for this region/weaponType, but limit concurrency
         const urls = Array.from(
           { length: 10 },
           (_, i) =>
@@ -248,34 +334,52 @@ app.get("/api/growth-top-players", async (c) => {
           {
             headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
           },
-          3, // limit to 3 concurrent fetches
+          3,
         );
         for (const items of pagesItems) {
           allItems.push(...items);
         }
       }
     }
-    // Normalize and remove duplicates based on RegionID and CharacterName
+    // Normalize and remove duplicates based on RegionID and CharacterName (Unicode normalized)
     const seen = new Set();
     const uniqueItems = [];
     for (const item of allItems) {
-      const key = `${item.RegionID}-${item.CharacterName}`;
-      if (item.CharacterName && item.RegionID && !seen.has(key)) {
+      const normalizedName =
+        typeof item.CharacterName === "string"
+          ? item.CharacterName.normalize("NFC")
+          : item.CharacterName;
+      const key = `${item.RegionID}-${normalizedName}`;
+      if (normalizedName && item.RegionID && !seen.has(key)) {
         seen.add(key);
-        uniqueItems.push(item);
+        uniqueItems.push({ ...item, CharacterName: normalizedName });
       }
     }
-    // Sort by score descending
     uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     const result = { items: uniqueItems };
     const ttl = getSecondsUntilMidnight();
-    cache.set(cacheKey, result);
-    setTimeout(() => cache.delete(cacheKey), ttl * 1000);
-    return c.json(result);
+    await setCache(cacheKey, result, ttl, c);
+    return c.json({ status: "warmed", count: uniqueItems.length });
   } catch (e) {
     console.log(e);
-    return c.json({ error: "Failed to fetch data" }, 500);
+    return c.json({ error: "Failed to warm cache" }, 500);
   }
+});
+
+// Serve only cached data for all top players (must be after getCache is defined)
+app.get("/api/growth-top-players", async (c) => {
+  const cacheKey = "growth-top-players-ALL";
+  const cached = await getCache(cacheKey, c);
+  if (cached) {
+    return c.json(cached);
+  }
+  return c.json(
+    {
+      error:
+        "Cache not warmed. Please POST to /api/growth-top-players-warm first.",
+    },
+    503,
+  );
 });
 
 export default app;
