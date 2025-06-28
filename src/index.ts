@@ -412,9 +412,13 @@ app.get("/api/growth-top-players", async (c) => {
     }
   }
   if (allItems.length === 0) {
-    return c.json({
-      error: "Cache not warmed. Please POST to /api/growth-top-players-warm first.",
-    }, 503);
+    return c.json(
+      {
+        error:
+          "Cache not warmed. Please POST to /api/growth-top-players-warm first.",
+      },
+      503,
+    );
   }
   // Deduplicate and sort
   const seen = new Set();
@@ -436,12 +440,17 @@ app.get("/api/growth-top-players", async (c) => {
 
 // WARM-UP ENDPOINT: Triggers batch warming (starts at batch 1)
 app.post("/api/growth-top-players-warm", async (c) => {
-  // Call the batch endpoint for batch=1
-  const url = new URL(c.req.url);
-  url.pathname = "/api/growth-warm-batch";
-  url.searchParams.set("batch", "1");
-  await fetch(url.toString(), { method: "GET" });
-  return c.json({ status: "Batch warming started." });
+  try {
+    // Build absolute URL for internal fetch (required by Workers fetch)
+    const host = c.req.header("Host") || "localhost:8787";
+    const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+    const url = `${protocol}://${host}/api/growth-warm-batch?batch=1`;
+    await fetch(url, { method: "GET" });
+    return c.json({ status: "Batch warming started." });
+  } catch (e) {
+    console.error("Error in /api/growth-top-players-warm:", e);
+    return c.json({ error: "Failed to start batch warming." }, 500);
+  }
 });
 
 // Serve only cached data for all top players (must be after getCache is defined)
