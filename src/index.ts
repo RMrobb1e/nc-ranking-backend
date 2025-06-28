@@ -9,6 +9,7 @@ const NC_API_KEY = "RurW1g27YvYnU6QRxphBf";
 
 const app = new Hono<{ Bindings: Env }>();
 
+const cache = new Map<string, any>();
 // --- Batch warming logic for recursive fetches ---
 
 const BATCH_SIZE = 50;
@@ -24,72 +25,6 @@ function getAllRegionWeaponCombos() {
   }
   return combos;
 }
-
-// GET /api/growth-warm-batch?batch=N (must be after app declaration)
-
-// Batch warming endpoint must be after app declaration
-app.get("/api/growth-warm-batch", async (c) => {
-  const batchParam = c.req.query("batch") || "1";
-  const batch = parseInt(batchParam, 10);
-  if (isNaN(batch) || batch < 1) return c.json({ error: "Invalid batch" }, 400);
-  const combos = getAllRegionWeaponCombos();
-  const totalBatches = Math.ceil(combos.length / BATCH_SIZE);
-  const start = (batch - 1) * BATCH_SIZE;
-  const end = Math.min(start + BATCH_SIZE, combos.length);
-  const batchCombos = combos.slice(start, end);
-  const allItems = [];
-  for (const { regionCode, weaponType } of batchCombos) {
-    const urls = Array.from(
-      { length: 10 },
-      (_, i) =>
-        `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
-          i + 1
-        }&weaponType=${weaponType}`,
-    );
-    const pagesItems = await limitedParallelFetches(
-      urls,
-      {
-        headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
-      },
-      3,
-    );
-    for (const items of pagesItems) {
-      allItems.push(...items);
-    }
-  }
-  // Only cache on the last batch
-  let status = `Batch ${batch} of ${totalBatches} complete.`;
-  if (batch < totalBatches) {
-    // Call next batch recursively
-    const url = new URL(c.req.url);
-    url.searchParams.set("batch", String(batch + 1));
-    await fetch(url.toString(), { method: "GET" });
-    status += ` Triggered batch ${batch + 1}.`;
-  } else {
-    // On last batch, normalize, dedupe, sort, and cache
-    const seen = new Set();
-    const uniqueItems = [];
-    for (const item of allItems) {
-      const normalizedName =
-        typeof item.CharacterName === "string"
-          ? item.CharacterName.normalize("NFC")
-          : item.CharacterName;
-      const key = `${item.RegionID}-${normalizedName}`;
-      if (normalizedName && item.RegionID && !seen.has(key)) {
-        seen.add(key);
-        uniqueItems.push({ ...item, CharacterName: normalizedName });
-      }
-    }
-    uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-    const result = { items: uniqueItems };
-    const ttl = getSecondsUntilMidnight();
-    await setCache("growth-top-players-ALL", result, ttl, c);
-    status += ` All batches done. Cached ${uniqueItems.length} items.`;
-  }
-  return c.json({ status });
-});
-
-const cache = new Map<string, any>();
 
 // Cloudflare Workers scheduled() handler for cron triggers
 export async function scheduled(event: ScheduledEvent, env: any, ctx: any) {
@@ -327,6 +262,88 @@ app.get("/api/growth-page", async (c) => {
     console.log(e);
     return c.json({ error: "Failed to fetch data" }, 500);
   }
+});
+
+// GET /api/growth-warm-batch?batch=N (must be after app declaration)
+
+// Batch warming endpoint must be after app declaration
+app.get("/api/growth-warm-batch", async (c) => {
+  const batchParam = c.req.query("batch") || "1";
+  const batch = parseInt(batchParam, 10);
+  if (isNaN(batch) || batch < 1) {
+    console.log(`[warm-batch] Invalid batch param: ${batchParam}`);
+    return c.json({ error: "Invalid batch" }, 400);
+  }
+  const combos = getAllRegionWeaponCombos();
+  const totalBatches = Math.ceil(combos.length / BATCH_SIZE);
+  const start = (batch - 1) * BATCH_SIZE;
+  const end = Math.min(start + BATCH_SIZE, combos.length);
+  const batchCombos = combos.slice(start, end);
+  console.log(
+    `[warm-batch] Starting batch ${batch}/${totalBatches} [combos ${start} to ${
+      end - 1
+    }] at ${new Date().toISOString()}`,
+  );
+  const allItems = [];
+  for (const { regionCode, weaponType } of batchCombos) {
+    console.log(
+      `[warm-batch] Fetching regionCode=${regionCode}, weaponType=${weaponType}`,
+    );
+    const urls = Array.from(
+      { length: 10 },
+      (_, i) =>
+        `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
+          i + 1
+        }&weaponType=${weaponType}`,
+    );
+    const pagesItems = await limitedParallelFetches(
+      urls,
+      {
+        headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
+      },
+      3,
+    );
+    for (const items of pagesItems) {
+      allItems.push(...items);
+    }
+  }
+  // Only cache on the last batch
+  let status = `Batch ${batch} of ${totalBatches} complete.`;
+  if (batch < totalBatches) {
+    // Call next batch recursively
+    console.log(
+      `[warm-batch] Batch ${batch} done, triggering batch ${batch + 1}`,
+    );
+    const url = new URL(c.req.url);
+    url.searchParams.set("batch", String(batch + 1));
+    await fetch(url.toString(), { method: "GET" });
+    status += ` Triggered batch ${batch + 1}.`;
+  } else {
+    // On last batch, normalize, dedupe, sort, and cache
+    console.log(`[warm-batch] Last batch, deduping and caching results...`);
+    const seen = new Set();
+    const uniqueItems = [];
+    for (const item of allItems) {
+      const normalizedName =
+        typeof item.CharacterName === "string"
+          ? item.CharacterName.normalize("NFC")
+          : item.CharacterName;
+      const key = `${item.RegionID}-${normalizedName}`;
+      if (normalizedName && item.RegionID && !seen.has(key)) {
+        seen.add(key);
+        uniqueItems.push({ ...item, CharacterName: normalizedName });
+      }
+    }
+    uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const result = { items: uniqueItems };
+    const ttl = getSecondsUntilMidnight();
+    await setCache("growth-top-players-ALL", result, ttl, c);
+    status += ` All batches done. Cached ${uniqueItems.length} items.`;
+    console.log(
+      `[warm-batch] All batches done. Cached ${uniqueItems.length} items.`,
+    );
+  }
+  return c.json({ status });
 });
 
 // GET /api/growth-top-1000
