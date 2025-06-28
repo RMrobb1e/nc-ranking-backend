@@ -1,5 +1,99 @@
+import { regions, weaponTypes, rankingTypes } from "./utils/constants";
+import { Hono } from "hono";
+
+type Env = {
+  GIPHY_API_KEY: string;
+};
+
+const NC_API_KEY = "RurW1g27YvYnU6QRxphBf";
+
+const app = new Hono<{ Bindings: Env }>();
+
+// --- Batch warming logic for recursive fetches ---
+
+const BATCH_SIZE = 50;
+function getAllRegionWeaponCombos() {
+  const combos = [];
+  for (const region of regions) {
+    const regionCode = region.code;
+    if (regionCode === 0) continue;
+    for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
+      if (weaponTypeName === "All") continue;
+      combos.push({ regionCode, weaponType });
+    }
+  }
+  return combos;
+}
+
+// GET /api/growth-warm-batch?batch=N (must be after app declaration)
+
+// Batch warming endpoint must be after app declaration
+app.get("/api/growth-warm-batch", async (c) => {
+  const batchParam = c.req.query("batch") || "1";
+  const batch = parseInt(batchParam, 10);
+  if (isNaN(batch) || batch < 1) return c.json({ error: "Invalid batch" }, 400);
+  const combos = getAllRegionWeaponCombos();
+  const totalBatches = Math.ceil(combos.length / BATCH_SIZE);
+  const start = (batch - 1) * BATCH_SIZE;
+  const end = Math.min(start + BATCH_SIZE, combos.length);
+  const batchCombos = combos.slice(start, end);
+  const allItems = [];
+  for (const { regionCode, weaponType } of batchCombos) {
+    const urls = Array.from(
+      { length: 10 },
+      (_, i) =>
+        `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
+          i + 1
+        }&weaponType=${weaponType}`,
+    );
+    const pagesItems = await limitedParallelFetches(
+      urls,
+      {
+        headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
+      },
+      3,
+    );
+    for (const items of pagesItems) {
+      allItems.push(...items);
+    }
+  }
+  // Only cache on the last batch
+  let status = `Batch ${batch} of ${totalBatches} complete.`;
+  if (batch < totalBatches) {
+    // Call next batch recursively
+    const url = new URL(c.req.url);
+    url.searchParams.set("batch", String(batch + 1));
+    await fetch(url.toString(), { method: "GET" });
+    status += ` Triggered batch ${batch + 1}.`;
+  } else {
+    // On last batch, normalize, dedupe, sort, and cache
+    const seen = new Set();
+    const uniqueItems = [];
+    for (const item of allItems) {
+      const normalizedName =
+        typeof item.CharacterName === "string"
+          ? item.CharacterName.normalize("NFC")
+          : item.CharacterName;
+      const key = `${item.RegionID}-${normalizedName}`;
+      if (normalizedName && item.RegionID && !seen.has(key)) {
+        seen.add(key);
+        uniqueItems.push({ ...item, CharacterName: normalizedName });
+      }
+    }
+    uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const result = { items: uniqueItems };
+    const ttl = getSecondsUntilMidnight();
+    await setCache("growth-top-players-ALL", result, ttl, c);
+    status += ` All batches done. Cached ${uniqueItems.length} items.`;
+  }
+  return c.json({ status });
+});
+
+const cache = new Map<string, any>();
+
 // Cloudflare Workers scheduled() handler for cron triggers
 export async function scheduled(event: ScheduledEvent, env: any, ctx: any) {
+  console.log("[scheduled] Warm-up started at", new Date().toISOString());
   // Call the same logic as the warm-up endpoint
   // We create a mock context object for setCache/getCache
   const cacheKey = "growth-top-players-ALL";
@@ -118,19 +212,6 @@ async function limitedParallelFetches(
   await Promise.all(Array.from({ length: limit }, next));
   return results;
 }
-import { regions, weaponTypes, rankingTypes } from "./utils/constants";
-import { Hono } from "hono";
-
-type Env = {
-  GIPHY_API_KEY: string;
-};
-
-const NC_API_KEY = "RurW1g27YvYnU6QRxphBf";
-
-const app = new Hono<{ Bindings: Env }>();
-
-const cache = new Map<string, any>();
-
 function getSecondsUntilMidnight(): number {
   const now = new Date();
   const midnight = new Date();
@@ -312,58 +393,14 @@ app.get("/api/growth-top-players", async (c) => {
   );
 });
 
-// WARM-UP ENDPOINT: Precompute and cache all top players for all regions and weapon types
+// WARM-UP ENDPOINT: Triggers batch warming (starts at batch 1)
 app.post("/api/growth-top-players-warm", async (c) => {
-  const cacheKey = "growth-top-players-ALL";
-  const allItems = [];
-  try {
-    for (const region of regions) {
-      const regionCode = region.code;
-      if (regionCode === 0) continue; // skip 'ALL' region
-      for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
-        if (weaponTypeName === "All") continue; // skip 'All' weapon type
-        const urls = Array.from(
-          { length: 10 },
-          (_, i) =>
-            `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
-              i + 1
-            }&weaponType=${weaponType}`,
-        );
-        const pagesItems = await limitedParallelFetches(
-          urls,
-          {
-            headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
-          },
-          3,
-        );
-        for (const items of pagesItems) {
-          allItems.push(...items);
-        }
-      }
-    }
-    // Normalize and remove duplicates based on RegionID and CharacterName (Unicode normalized)
-    const seen = new Set();
-    const uniqueItems = [];
-    for (const item of allItems) {
-      const normalizedName =
-        typeof item.CharacterName === "string"
-          ? item.CharacterName.normalize("NFC")
-          : item.CharacterName;
-      const key = `${item.RegionID}-${normalizedName}`;
-      if (normalizedName && item.RegionID && !seen.has(key)) {
-        seen.add(key);
-        uniqueItems.push({ ...item, CharacterName: normalizedName });
-      }
-    }
-    uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-    const result = { items: uniqueItems };
-    const ttl = getSecondsUntilMidnight();
-    await setCache(cacheKey, result, ttl, c);
-    return c.json({ status: "warmed", count: uniqueItems.length });
-  } catch (e) {
-    console.log(e);
-    return c.json({ error: "Failed to warm cache" }, 500);
-  }
+  // Call the batch endpoint for batch=1
+  const url = new URL(c.req.url);
+  url.pathname = "/api/growth-warm-batch";
+  url.searchParams.set("batch", "1");
+  await fetch(url.toString(), { method: "GET" });
+  return c.json({ status: "Batch warming started." });
 });
 
 // Serve only cached data for all top players (must be after getCache is defined)
