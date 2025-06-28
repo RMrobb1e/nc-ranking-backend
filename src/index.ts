@@ -307,6 +307,10 @@ app.get("/api/growth-warm-batch", async (c) => {
       allItems.push(...items);
     }
   }
+  // Save this batch's items to Cloudflare KV
+  const batchCacheKey = `growth-warm-batch-${batch}`;
+  const ttl = getSecondsUntilMidnight();
+  await setCache(batchCacheKey, { items: allItems }, ttl, c);
   // Only cache on the last batch
   let status = `Batch ${batch} of ${totalBatches} complete.`;
   if (batch < totalBatches) {
@@ -396,18 +400,38 @@ app.get("/api/growth-top-1000", async (c) => {
 
 // Serve only cached data for all top players (must be after getCache is defined)
 app.get("/api/growth-top-players", async (c) => {
-  const cacheKey = "growth-top-players-ALL";
-  const cached = await getCache(cacheKey, c);
-  if (cached) {
-    return c.json(cached);
+  // Aggregate all batch results from KV
+  const combos = getAllRegionWeaponCombos();
+  const totalBatches = Math.ceil(combos.length / BATCH_SIZE);
+  let allItems = [];
+  for (let batch = 1; batch <= totalBatches; batch++) {
+    const batchCacheKey = `growth-warm-batch-${batch}`;
+    const batchData = await getCache(batchCacheKey, c);
+    if (batchData && Array.isArray(batchData.items)) {
+      allItems.push(...batchData.items);
+    }
   }
-  return c.json(
-    {
-      error:
-        "Cache not warmed. Please POST to /api/growth-top-players-warm first.",
-    },
-    503,
-  );
+  if (allItems.length === 0) {
+    return c.json({
+      error: "Cache not warmed. Please POST to /api/growth-top-players-warm first.",
+    }, 503);
+  }
+  // Deduplicate and sort
+  const seen = new Set();
+  const uniqueItems = [];
+  for (const item of allItems) {
+    const normalizedName =
+      typeof item.CharacterName === "string"
+        ? item.CharacterName.normalize("NFC")
+        : item.CharacterName;
+    const key = `${item.RegionID}-${normalizedName}`;
+    if (normalizedName && item.RegionID && !seen.has(key)) {
+      seen.add(key);
+      uniqueItems.push({ ...item, CharacterName: normalizedName });
+    }
+  }
+  uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  return c.json({ items: uniqueItems });
 });
 
 // WARM-UP ENDPOINT: Triggers batch warming (starts at batch 1)
