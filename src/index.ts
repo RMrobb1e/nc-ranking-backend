@@ -29,59 +29,15 @@ function getAllRegionWeaponCombos() {
 // Cloudflare Workers scheduled() handler for cron triggers
 export async function scheduled(event: ScheduledEvent, env: any, ctx: any) {
   console.log("[scheduled] Warm-up started at", new Date().toISOString());
-  // Call the same logic as the warm-up endpoint
-  // We create a mock context object for setCache/getCache
-  const cacheKey = "growth-top-players-ALL";
-  const allItems = [];
+  // Trigger the batch warm-up endpoint as a scheduled job
   try {
-    for (const region of regions) {
-      const regionCode = region.code;
-      if (regionCode === 0) continue;
-      for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
-        if (weaponTypeName === "All") continue;
-        const urls = Array.from(
-          { length: 10 },
-          (_, i) =>
-            `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
-              i + 1
-            }&weaponType=${weaponType}`,
-        );
-        const pagesItems = await limitedParallelFetches(
-          urls,
-          {
-            headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
-          },
-          3,
-        );
-        for (const items of pagesItems) {
-          allItems.push(...items);
-        }
-      }
-    }
-    const seen = new Set();
-    const uniqueItems = [];
-    for (const item of allItems) {
-      const normalizedName =
-        typeof item.CharacterName === "string"
-          ? item.CharacterName.normalize("NFC")
-          : item.CharacterName;
-      const key = `${item.RegionID}-${normalizedName}`;
-      if (normalizedName && item.RegionID && !seen.has(key)) {
-        seen.add(key);
-        uniqueItems.push({ ...item, CharacterName: normalizedName });
-      }
-    }
-    uniqueItems.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-    const result = { items: uniqueItems };
-    const now = new Date();
-    const midnight = new Date();
-    midnight.setHours(24, 0, 0, 0);
-    const ttl = Math.floor((midnight.getTime() - now.getTime()) / 1000);
-    await setCache(cacheKey, result, ttl, { env });
-    // No return needed for scheduled handler
+    const host = env && env.HOST ? env.HOST : "localhost:8787";
+    const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+    const url = `${protocol}://${host}/api/growth-warm-batch?batch=1`;
+    await fetch(url, { method: "GET" });
+    console.log(`[scheduled] Triggered batch warm-up at ${url}`);
   } catch (e) {
-    // Optionally log error
-    // console.log("Scheduled warm-up failed", e);
+    console.error("[scheduled] Failed to trigger batch warm-up", e);
   }
 }
 
@@ -314,13 +270,14 @@ app.get("/api/growth-warm-batch", async (c) => {
   // Only cache on the last batch
   let status = `Batch ${batch} of ${totalBatches} complete.`;
   if (batch < totalBatches) {
-    // Call next batch recursively
+    // Call next batch recursively using absolute URL (Cloudflare Workers requires this)
     console.log(
       `[warm-batch] Batch ${batch} done, triggering batch ${batch + 1}`,
     );
-    const url = new URL(c.req.url);
-    url.searchParams.set("batch", String(batch + 1));
-    await fetch(url.toString(), { method: "GET" });
+    const host = c.req.header("Host") || "localhost:8787";
+    const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+    const nextBatchUrl = `${protocol}://${host}/api/growth-warm-batch?batch=${batch + 1}`;
+    await fetch(nextBatchUrl, { method: "GET" });
     status += ` Triggered batch ${batch + 1}.`;
   } else {
     // On last batch, normalize, dedupe, sort, and cache
