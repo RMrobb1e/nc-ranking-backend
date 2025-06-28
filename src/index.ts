@@ -32,7 +32,10 @@ export async function scheduled(event: ScheduledEvent, env: any, ctx: any) {
   // Trigger the batch warm-up endpoint as a scheduled job
   try {
     const host = env && env.HOST ? env.HOST : "localhost:8787";
-    const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+    const protocol =
+      host.startsWith("localhost") || host.startsWith("127.0.0.1")
+        ? "http"
+        : "https";
     const url = `${protocol}://${host}/api/growth-warm-batch?batch=1`;
     await fetch(url, { method: "GET" });
     console.log(`[scheduled] Triggered batch warm-up at ${url}`);
@@ -224,6 +227,9 @@ app.get("/api/growth-page", async (c) => {
 
 // Batch warming endpoint must be after app declaration
 app.get("/api/growth-warm-batch", async (c) => {
+  // Add a short delay before reading/writing to KV to help with Cloudflare KV propagation
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  await sleep(250); // 250ms delay for debugging
   const batchParam = c.req.query("batch") || "1";
   const batch = parseInt(batchParam, 10);
   if (isNaN(batch) || batch < 1) {
@@ -236,10 +242,12 @@ app.get("/api/growth-warm-batch", async (c) => {
   const end = Math.min(start + BATCH_SIZE, combos.length);
   const batchCombos = combos.slice(start, end);
   console.log(
-    `[warm-batch] Starting batch ${batch}/${totalBatches} [combos ${start} to ${
-      end - 1
-    }] at ${new Date().toISOString()}`,
+    `[warm-batch] Starting batch ${batch}/${totalBatches} [combos ${start} to ${end - 1}] at ${new Date().toISOString()}`,
   );
+  console.log(`[warm-batch] combos.length: ${combos.length}, start: ${start}, end: ${end}, batchCombos.length: ${batchCombos.length}`);
+  if (batchCombos.length === 0) {
+    console.warn(`[warm-batch] Batch ${batch} has no combos to process!`);
+  }
   const allItems = [];
   for (const { regionCode, weaponType } of batchCombos) {
     console.log(
@@ -266,6 +274,7 @@ app.get("/api/growth-warm-batch", async (c) => {
   // Save this batch's items to Cloudflare KV
   const batchCacheKey = `growth-warm-batch-${batch}`;
   const ttl = getSecondsUntilMidnight();
+  await sleep(250); // 250ms delay before writing to KV for debugging
   await setCache(batchCacheKey, { items: allItems }, ttl, c);
   // Only cache on the last batch
   let status = `Batch ${batch} of ${totalBatches} complete.`;
@@ -275,9 +284,14 @@ app.get("/api/growth-warm-batch", async (c) => {
       `[warm-batch] Batch ${batch} done, triggering batch ${batch + 1}`,
     );
     const host = c.req.header("Host") || "localhost:8787";
-    const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
-    const nextBatchUrl = `${protocol}://${host}/api/growth-warm-batch?batch=${batch + 1}`;
-    c.executionCtx.waitUntil(fetch(nextBatchUrl, { method: "GET" }));
+    const protocol =
+      host.startsWith("localhost") || host.startsWith("127.0.0.1")
+        ? "http"
+        : "https";
+    const nextBatchUrl = `${protocol}://${host}/api/growth-warm-batch?batch=${
+      batch + 1
+    }`;
+    await fetch(nextBatchUrl, { method: "GET" });
     status += ` Triggered batch ${batch + 1}.`;
   } else {
     // On last batch, normalize, dedupe, sort, and cache
@@ -400,7 +414,10 @@ app.post("/api/growth-top-players-warm", async (c) => {
   try {
     // Build absolute URL for internal fetch (required by Workers fetch)
     const host = c.req.header("Host") || "localhost:8787";
-    const protocol = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+    const protocol =
+      host.startsWith("localhost") || host.startsWith("127.0.0.1")
+        ? "http"
+        : "https";
     const url = `${protocol}://${host}/api/growth-warm-batch?batch=1`;
     c.executionCtx.waitUntil(fetch(url, { method: "GET" }));
     return c.json({ status: "Batch warming started." });
