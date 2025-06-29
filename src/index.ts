@@ -433,8 +433,10 @@ app.get("/api/growth-top-players", async (c) => {
 });
 
 // POST /api/growth-top-players-warm-batch?batch=N
-app.post("/api/growth-top-players-warm-batch", async (c) => {
+app.get("/api/growth-top-players-warm-batch", async (c) => {
   const batch = parseInt(c.req.query("batch") ?? "1", 10); // 1-based
+  const requestId = Date.now() + "-" + Math.floor(Math.random() * 10000);
+  console.log(`[warm-batch-alt] START batch ${batch} requestId=${requestId}`);
   const weaponTypeEntries = Object.entries(weaponTypes).filter(
     ([name]) => name !== "All",
   );
@@ -463,6 +465,13 @@ app.post("/api/growth-top-players-warm-batch", async (c) => {
           i + 1
         }&weaponType=${weaponType}`,
     );
+    console.log(
+      `[warm-batch-alt] [${requestId}] Batch ${batch} regionCode=${regionCode} weaponType=${weaponType} URLs:`,
+      urls,
+    );
+    console.log(
+      `[warm-batch-alt] [${requestId}] Fetching ${urls.length} URLs with concurrency 3`,
+    );
     const pagesItems = await limitedParallelFetches(
       urls,
       {
@@ -470,9 +479,15 @@ app.post("/api/growth-top-players-warm-batch", async (c) => {
       },
       3,
     );
+    console.log(
+      `[warm-batch-alt] [${requestId}] Finished fetching URLs for regionCode=${regionCode} weaponType=${weaponType}`,
+    );
     totalFetched += pagesItems.flat().length;
     allItems.push(...pagesItems.flat());
   }
+  console.log(
+    `[warm-batch-alt] [${requestId}] Batch ${batch} fetched total ${totalFetched} items.`,
+  );
   // Save this batch's items to Cloudflare KV
   const batchCacheKey = `growth-warm-batch-alt-${batch}`;
   const ttl = getSecondsUntilMidnight();
