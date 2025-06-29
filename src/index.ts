@@ -496,15 +496,18 @@ app.post("/api/growth-top-players-warm-batch", async (c) => {
   // Optionally trigger next batch
   let status = `Batch ${batch} of ${totalBatches} complete. Fetched ${totalFetched} items.`;
   if (batch < totalBatches) {
-    // Trigger next batch recursively (optional)
-    const host = c.req.header("Host") || "localhost:8787";
-    const protocol =
-      host.startsWith("localhost") || host.startsWith("127.0.0.1")
-        ? "http"
-        : "https";
-    const nextBatchUrl = `${protocol}://${host}/api/growth-top-players-warm-batch?batch=${
-      batch + 1
-    }`;
+    // Use request header 'origin' to determine prod/dev
+    let nextBatchUrl;
+    const origin = c.req.header("origin") || c.req.header("Origin") || "";
+    if (origin.includes("nc-ranking-backend.robbie-ad5.workers.dev")) {
+      nextBatchUrl = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=${
+        batch + 1
+      }`;
+    } else {
+      nextBatchUrl = `http://localhost:8787/api/growth-top-players-warm-batch?batch=${
+        batch + 1
+      }`;
+    }
     await fetch(nextBatchUrl, { method: "POST" });
     status += ` Triggered batch ${batch + 1}.`;
   }
