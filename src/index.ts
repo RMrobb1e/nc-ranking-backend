@@ -445,7 +445,7 @@ app.post("/api/growth-top-players-warm-batch", async (c) => {
       combos.push({ regionCode, weaponType });
     }
   }
-  const combosPerBatch = 3; // each combo = 10 pages = 10 requests
+  const combosPerBatch = 1; // each combo = 10 pages = 10 requests
   const totalBatches = Math.ceil(combos.length / combosPerBatch);
   const start = (batch - 1) * combosPerBatch;
   const end = Math.min(start + combosPerBatch, combos.length);
