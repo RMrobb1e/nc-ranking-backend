@@ -15,7 +15,8 @@
   },
   "kv_namespaces": [
     { "binding": "KV", "id": "c6999c5c362f49f58ce58a12f8ec7938" }
-  ]
+  ],
+  "vars": { "GIPHY_API_KEY": "FqxfaITBUqm6oQNA6d6kwzmQCocf9chT" }
   /**
    * Smart Placement
    * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
