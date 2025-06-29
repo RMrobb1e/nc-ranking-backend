@@ -12,7 +12,7 @@ const app = new Hono<{ Bindings: Env }>();
 const cache = new Map<string, any>();
 // --- Batch warming logic for recursive fetches ---
 
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 10;
 function getAllRegionWeaponCombos() {
   const combos = [];
   for (const region of regions) {
@@ -450,7 +450,7 @@ app.get("/api/growth-top-players", async (c) => {
 
 // POST /api/growth-top-players-warm-batch?batch=N
 app.post("/api/growth-top-players-warm-batch", async (c) => {
-  const batch = parseInt(c.req.query("batch") ?? "0", 10);
+  const batch = parseInt(c.req.query("batch") ?? "1", 10); // 1-based
   const weaponTypeEntries = Object.entries(weaponTypes).filter(
     ([name]) => name !== "All",
   );
@@ -463,9 +463,11 @@ app.post("/api/growth-top-players-warm-batch", async (c) => {
   }
   const combosPerBatch = 5; // each combo = 10 pages = 10 requests
   const totalBatches = Math.ceil(combos.length / combosPerBatch);
-  const current = combos.slice(
-    batch * combosPerBatch,
-    (batch + 1) * combosPerBatch,
+  const start = (batch - 1) * combosPerBatch;
+  const end = Math.min(start + combosPerBatch, combos.length);
+  const current = combos.slice(start, end);
+  console.log(
+    `[warm-batch-alt] combos.length: ${combos.length}, batch: ${batch}, totalBatches: ${totalBatches}, start: ${start}, end: ${end}, current.length: ${current.length}`,
   );
   let totalFetched = 0;
   let allItems = [];
@@ -492,10 +494,8 @@ app.post("/api/growth-top-players-warm-batch", async (c) => {
   const ttl = getSecondsUntilMidnight();
   await setCache(batchCacheKey, { items: allItems }, ttl, c);
   // Optionally trigger next batch
-  let status = `Batch ${
-    batch + 1
-  } of ${totalBatches} complete. Fetched ${totalFetched} items.`;
-  if (batch + 1 < totalBatches) {
+  let status = `Batch ${batch} of ${totalBatches} complete. Fetched ${totalFetched} items.`;
+  if (batch < totalBatches) {
     // Trigger next batch recursively (optional)
     const host = c.req.header("Host") || "localhost:8787";
     const protocol =
@@ -506,9 +506,9 @@ app.post("/api/growth-top-players-warm-batch", async (c) => {
       batch + 1
     }`;
     await fetch(nextBatchUrl, { method: "POST" });
-    status += ` Triggered batch ${batch + 2}.`;
+    status += ` Triggered batch ${batch + 1}.`;
   }
-  return c.json({ status, batch: batch + 1, totalFetched });
+  return c.json({ status, batch, totalFetched });
 });
 
 export default app;
