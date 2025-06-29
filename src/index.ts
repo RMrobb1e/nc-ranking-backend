@@ -15,7 +15,7 @@ const app = new Hono<{ Bindings: Env }>();
 const cache = new Map<string, any>();
 // --- Batch warming logic for recursive fetches ---
 
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 3;
 function getAllRegionWeaponCombos() {
   const combos = [];
   for (const region of regions) {
@@ -397,7 +397,6 @@ app.get("/api/growth-top-players", async (c) => {
 
 // WARM-UP ENDPOINT: Triggers batch warming (starts at batch 1)
 app.post("/api/growth-top-players-warm", async (c) => {
-  console.log("zzzzz ", c.env.ENV);
   try {
     let url;
     const origin = c.req.header("origin") || c.req.header("Origin") || "";

@@ -10,23 +10,15 @@
   "observability": {
     "enabled": true
   },
-  "triggers": {
-    "crons": ["*/5 * * * *"]
-  },
+  // "triggers": {
+  //   "crons": ["*/5 * * * *"]
+  // },
   "kv_namespaces": [
     { "binding": "KV", "id": "c6999c5c362f49f58ce58a12f8ec7938" }
   ],
   "vars": {
     "GIPHY_API_KEY": "FqxfaITBUqm6oQNA6d6kwzmQCocf9chT",
-    "ENV": "development"
-  },
-  "env": {
-    "production": {
-      "vars": {
-        "GIPHY_API_KEY": "FqxfaITBUqm6oQNA6d6kwzmQCocf9chT",
-        "ENV": "production"
-      }
-    }
+    "ENV": "production"
   }
   /**
    * Smart Placement
