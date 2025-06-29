@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { rankingTypes, regions, weaponTypes } from "./utils/constants";
-import { scheduled as cronJob } from "./cron";
+import Cron from "./cron";
 
 type Env = {
   GIPHY_API_KEY: string;
   ENV: string;
 };
-export const scheduled = cronJob;
+export const scheduled = Cron;
 
 const NC_API_KEY = "RurW1g27YvYnU6QRxphBf";
 
