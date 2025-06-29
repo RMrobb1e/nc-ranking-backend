@@ -268,11 +268,11 @@ app.get("/api/growth-warm-batch", async (c) => {
     // Call next batch recursively using absolute URL (Cloudflare Workers requires this)
     let nextBatchUrl;
     if (c.env.ENV === "production") {
-      nextBatchUrl = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=${
+      nextBatchUrl = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-warm-batch?batch=${
         batch + 1
       }`;
     } else {
-      nextBatchUrl = `http://localhost:8787/api/growth-top-players-warm-batch?batch=${
+      nextBatchUrl = `http://localhost:8787/api/growth-warm-batch?batch=${
         batch + 1
       }`;
     }
@@ -282,7 +282,14 @@ app.get("/api/growth-warm-batch", async (c) => {
         batch + 1
       } url: ${nextBatchUrl}`,
     );
-    await fetch(nextBatchUrl, { method: "GET" });
+    c.executionCtx.waitUntil(
+      fetch(nextBatchUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent": "cf-warm-batch-trigger",
+        },
+      }),
+    );
     status += ` Triggered batch ${batch + 1}.`;
   } else {
     // On last batch, normalize, dedupe, sort, and cache
@@ -406,14 +413,21 @@ app.post("/api/growth-top-players-warm", async (c) => {
     let url;
     const origin = c.req.header("origin") || c.req.header("Origin") || "";
     if (c.env.ENV === "production") {
-      url = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1`;
+      url = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-warm-batch?batch=1`;
     } else {
-      url = `http://localhost:8787/api/growth-top-players-warm-batch?batch=1`;
+      url = `http://localhost:8787/api/growth-warm-batch?batch=1`;
     }
     console.log(
       `[warm] Triggering batch warming at ${url} from origin ${origin}`,
     );
-    c.executionCtx.waitUntil(fetch(url, { method: "GET" }));
+    c.executionCtx.waitUntil(
+      fetch(url, {
+        method: "GET",
+        headers: {
+          "User-Agent": "cf-warm-batch-trigger",
+        },
+      }),
+    );
     return c.json({ status: "Batch warming started." });
   } catch (e) {
     console.error("Error in /api/growth-top-players-warm:", e);
@@ -437,84 +451,84 @@ app.get("/api/growth-top-players", async (c) => {
   );
 });
 
-// POST /api/growth-top-players-warm-batch?batch=N
-app.get("/api/growth-top-players-warm-batch", async (c) => {
-  const batch = parseInt(c.req.query("batch") ?? "1", 10); // 1-based
-  const requestId = Date.now() + "-" + Math.floor(Math.random() * 10000);
-  console.log(`[warm-batch-alt] START batch ${batch} requestId=${requestId}`);
-  const weaponTypeEntries = Object.entries(weaponTypes).filter(
-    ([name]) => name !== "All",
-  );
-  const regionCodes = regions.map((r) => r.code).filter((code) => code !== 0);
-  const combos = [];
-  for (const [_, weaponType] of weaponTypeEntries) {
-    for (const regionCode of regionCodes) {
-      combos.push({ regionCode, weaponType });
-    }
-  }
-  const combosPerBatch = 1; // each combo = 10 pages = 10 requests
-  const totalBatches = Math.ceil(combos.length / combosPerBatch);
-  const start = (batch - 1) * combosPerBatch;
-  const end = Math.min(start + combosPerBatch, combos.length);
-  const current = combos.slice(start, end);
-  console.log(
-    `[warm-batch-alt] combos.length: ${combos.length}, batch: ${batch}, totalBatches: ${totalBatches}, start: ${start}, end: ${end}, current.length: ${current.length}`,
-  );
-  let totalFetched = 0;
-  let allItems = [];
-  for (const { regionCode, weaponType } of current) {
-    const urls = Array.from(
-      { length: 10 },
-      (_, i) =>
-        `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
-          i + 1
-        }&weaponType=${weaponType}`,
-    );
-    console.log(
-      `[warm-batch-alt] [${requestId}] Batch ${batch} regionCode=${regionCode} weaponType=${weaponType} URLs:`,
-      urls,
-    );
-    console.log(
-      `[warm-batch-alt] [${requestId}] Fetching ${urls.length} URLs with concurrency 3`,
-    );
-    const pagesItems = await limitedParallelFetches(
-      urls,
-      {
-        headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
-      },
-      3,
-    );
-    console.log(
-      `[warm-batch-alt] [${requestId}] Finished fetching URLs for regionCode=${regionCode} weaponType=${weaponType}`,
-    );
-    totalFetched += pagesItems.flat().length;
-    allItems.push(...pagesItems.flat());
-  }
-  console.log(
-    `[warm-batch-alt] [${requestId}] Batch ${batch} fetched total ${totalFetched} items.`,
-  );
-  // Save this batch's items to Cloudflare KV
-  const batchCacheKey = `growth-warm-batch-alt-${batch}`;
-  const ttl = getSecondsUntilMidnight();
-  await setCache(batchCacheKey, { items: allItems }, ttl, c);
-  // Optionally trigger next batch
-  let status = `Batch ${batch} of ${totalBatches} complete. Fetched ${totalFetched} items.`;
-  if (batch < totalBatches) {
-    // Use request header 'origin' to determine prod/dev
-    let nextBatchUrl;
-    if (c.env.ENV === "production") {
-      nextBatchUrl = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=${
-        batch + 1
-      }`;
-    } else {
-      nextBatchUrl = `http://localhost:8787/api/growth-top-players-warm-batch?batch=${
-        batch + 1
-      }`;
-    }
-    await fetch(nextBatchUrl, { method: "GET" });
-    status += ` Triggered batch ${batch + 1}.`;
-  }
-  return c.json({ status, batch, totalFetched });
-});
+// // GET /api/growth-top-players-warm-batch?batch=N
+// app.get("/api/growth-top-players-warm-batch", async (c) => {
+//   const batch = parseInt(c.req.query("batch") ?? "1", 10); // 1-based
+//   const requestId = Date.now() + "-" + Math.floor(Math.random() * 10000);
+//   console.log(`[warm-batch-alt] START batch ${batch} requestId=${requestId}`);
+//   const weaponTypeEntries = Object.entries(weaponTypes).filter(
+//     ([name]) => name !== "All",
+//   );
+//   const regionCodes = regions.map((r) => r.code).filter((code) => code !== 0);
+//   const combos = [];
+//   for (const [_, weaponType] of weaponTypeEntries) {
+//     for (const regionCode of regionCodes) {
+//       combos.push({ regionCode, weaponType });
+//     }
+//   }
+//   const combosPerBatch = 1; // each combo = 10 pages = 10 requests
+//   const totalBatches = Math.ceil(combos.length / combosPerBatch);
+//   const start = (batch - 1) * combosPerBatch;
+//   const end = Math.min(start + combosPerBatch, combos.length);
+//   const current = combos.slice(start, end);
+//   console.log(
+//     `[warm-batch-alt] combos.length: ${combos.length}, batch: ${batch}, totalBatches: ${totalBatches}, start: ${start}, end: ${end}, current.length: ${current.length}`,
+//   );
+//   let totalFetched = 0;
+//   let allItems = [];
+//   for (const { regionCode, weaponType } of current) {
+//     const urls = Array.from(
+//       { length: 10 },
+//       (_, i) =>
+//         `https://www.nightcrows.com/_next/data/${NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${
+//           i + 1
+//         }&weaponType=${weaponType}`,
+//     );
+//     console.log(
+//       `[warm-batch-alt] [${requestId}] Batch ${batch} regionCode=${regionCode} weaponType=${weaponType} URLs:`,
+//       urls,
+//     );
+//     console.log(
+//       `[warm-batch-alt] [${requestId}] Fetching ${urls.length} URLs with concurrency 3`,
+//     );
+//     const pagesItems = await limitedParallelFetches(
+//       urls,
+//       {
+//         headers: { Referer: "https://www.nightcrows.com/en/ranking/level" },
+//       },
+//       3,
+//     );
+//     console.log(
+//       `[warm-batch-alt] [${requestId}] Finished fetching URLs for regionCode=${regionCode} weaponType=${weaponType}`,
+//     );
+//     totalFetched += pagesItems.flat().length;
+//     allItems.push(...pagesItems.flat());
+//   }
+//   console.log(
+//     `[warm-batch-alt] [${requestId}] Batch ${batch} fetched total ${totalFetched} items.`,
+//   );
+//   // Save this batch's items to Cloudflare KV
+//   const batchCacheKey = `growth-warm-batch-alt-${batch}`;
+//   const ttl = getSecondsUntilMidnight();
+//   await setCache(batchCacheKey, { items: allItems }, ttl, c);
+//   // Optionally trigger next batch
+//   let status = `Batch ${batch} of ${totalBatches} complete. Fetched ${totalFetched} items.`;
+//   if (batch < totalBatches) {
+//     // Use request header 'origin' to determine prod/dev
+//     let nextBatchUrl;
+//     if (c.env.ENV === "production") {
+//       nextBatchUrl = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=${
+//         batch + 1
+//       }`;
+//     } else {
+//       nextBatchUrl = `http://localhost:8787/api/growth-top-players-warm-batch?batch=${
+//         batch + 1
+//       }`;
+//     }
+//     await fetch(nextBatchUrl, { method: "GET" });
+//     status += ` Triggered batch ${batch + 1}.`;
+//   }
+//   return c.json({ status, batch, totalFetched });
+// });
 
 export default app;
