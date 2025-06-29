@@ -415,6 +415,9 @@ app.post("/api/growth-top-players-warm", async (c) => {
     } else {
       url = `http://localhost:8787/api/growth-top-players-warm-batch?batch=1`;
     }
+    console.log(
+      `[warm] Triggering batch warming at ${url} from origin ${origin}`,
+    );
     c.executionCtx.waitUntil(fetch(url, { method: "GET" }));
     return c.json({ status: "Batch warming started." });
   } catch (e) {
