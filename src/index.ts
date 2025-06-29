@@ -407,7 +407,14 @@ app.post("/api/growth-top-players-warm", async (c) => {
       host.startsWith("localhost") || host.startsWith("127.0.0.1")
         ? "http"
         : "https";
-    const url = `${protocol}://${host}/api/growth-warm-batch?batch=1`;
+
+    let url;
+    const origin = c.req.header("origin") || c.req.header("Origin") || "";
+    if (origin.includes("nc-ranking-backend.robbie-ad5.workers.dev")) {
+      url = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1`;
+    } else {
+      url = `http://localhost:8787/api/growth-top-players-warm-batch?batch=1`;
+    }
     c.executionCtx.waitUntil(fetch(url, { method: "GET" }));
     return c.json({ status: "Batch warming started." });
   } catch (e) {
