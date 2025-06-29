@@ -266,17 +266,22 @@ app.get("/api/growth-warm-batch", async (c) => {
   let status = `Batch ${batch} of ${totalBatches} complete.`;
   if (batch < totalBatches) {
     // Call next batch recursively using absolute URL (Cloudflare Workers requires this)
+    let nextBatchUrl;
+    if (c.env.ENV === "production") {
+      nextBatchUrl = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=${
+        batch + 1
+      }`;
+    } else {
+      nextBatchUrl = `http://localhost:8787/api/growth-top-players-warm-batch?batch=${
+        batch + 1
+      }`;
+    }
+
     console.log(
-      `[warm-batch] Batch ${batch} done, triggering batch ${batch + 1}`,
+      `[warm-batch] Batch ${batch} done, triggering batch ${
+        batch + 1
+      } url: ${nextBatchUrl}`,
     );
-    const host = c.req.header("Host") || "localhost:8787";
-    const protocol =
-      host.startsWith("localhost") || host.startsWith("127.0.0.1")
-        ? "http"
-        : "https";
-    const nextBatchUrl = `${protocol}://${host}/api/growth-warm-batch?batch=${
-      batch + 1
-    }`;
     await fetch(nextBatchUrl, { method: "GET" });
     status += ` Triggered batch ${batch + 1}.`;
   } else {
