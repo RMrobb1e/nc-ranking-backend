@@ -4,6 +4,7 @@ import { scheduled as cronJob } from "./cron";
 
 type Env = {
   GIPHY_API_KEY: string;
+  ENV: string;
 };
 export const scheduled = cronJob;
 
@@ -14,7 +15,7 @@ const app = new Hono<{ Bindings: Env }>();
 const cache = new Map<string, any>();
 // --- Batch warming logic for recursive fetches ---
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 5;
 function getAllRegionWeaponCombos() {
   const combos = [];
   for (const region of regions) {
@@ -47,8 +48,6 @@ async function setCache(key: string, value: any, ttlSeconds: number, c: any) {
   cache.set(key, value);
   setTimeout(() => cache.delete(key), ttlSeconds * 1000);
 }
-
-// --- Place warm-up and cache endpoints after getCache/setCache ---
 
 // Helper to limit concurrent fetches
 async function limitedParallelFetches(
@@ -208,8 +207,6 @@ app.get("/api/growth-page", async (c) => {
 });
 
 // GET /api/growth-warm-batch?batch=N (must be after app declaration)
-
-// Batch warming endpoint must be after app declaration
 app.get("/api/growth-warm-batch", async (c) => {
   // Add a short delay before reading/writing to KV to help with Cloudflare KV propagation
   const sleep = (ms: number) =>
@@ -400,22 +397,15 @@ app.get("/api/growth-top-players", async (c) => {
 
 // WARM-UP ENDPOINT: Triggers batch warming (starts at batch 1)
 app.post("/api/growth-top-players-warm", async (c) => {
+  console.log("zzzzz ", c.env.ENV);
   try {
-    // Build absolute URL for internal fetch (required by Workers fetch)
-    const host = c.req.header("Host") || "localhost:8787";
-    const protocol =
-      host.startsWith("localhost") || host.startsWith("127.0.0.1")
-        ? "http"
-        : "https";
-
-    let url =
-      "https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1";
-    // const origin = c.req.header("origin") || c.req.header("Origin") || "";
-    // if (origin.includes("nc-ranking-backend.robbie-ad5.workers.dev")) {
-    //   url = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1`;
-    // } else {
-    //   url = `http://localhost:8787/api/growth-top-players-warm-batch?batch=1`;
-    // }
+    let url;
+    const origin = c.req.header("origin") || c.req.header("Origin") || "";
+    if (c.env.ENV === "production") {
+      url = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1`;
+    } else {
+      url = `http://localhost:8787/api/growth-top-players-warm-batch?batch=1`;
+    }
     console.log(
       `[warm] Triggering batch warming at ${url} from origin ${origin}`,
     );
@@ -508,8 +498,7 @@ app.get("/api/growth-top-players-warm-batch", async (c) => {
   if (batch < totalBatches) {
     // Use request header 'origin' to determine prod/dev
     let nextBatchUrl;
-    const origin = c.req.header("origin") || c.req.header("Origin") || "";
-    if (origin.includes("nc-ranking-backend.robbie-ad5.workers.dev")) {
+    if (c.env.ENV === "production") {
       nextBatchUrl = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=${
         batch + 1
       }`;
@@ -518,7 +507,7 @@ app.get("/api/growth-top-players-warm-batch", async (c) => {
         batch + 1
       }`;
     }
-    await fetch(nextBatchUrl, { method: "POST" });
+    await fetch(nextBatchUrl, { method: "GET" });
     status += ` Triggered batch ${batch + 1}.`;
   }
   return c.json({ status, batch, totalFetched });
