@@ -1,9 +1,11 @@
-import { regions, weaponTypes, rankingTypes } from "./utils/constants";
 import { Hono } from "hono";
+import { rankingTypes, regions, weaponTypes } from "./utils/constants";
+import { scheduled as cronJob } from "./cron";
 
 type Env = {
   GIPHY_API_KEY: string;
 };
+export const scheduled = cronJob;
 
 const NC_API_KEY = "RurW1g27YvYnU6QRxphBf";
 
@@ -24,24 +26,6 @@ function getAllRegionWeaponCombos() {
     }
   }
   return combos;
-}
-
-// Cloudflare Workers scheduled() handler for cron triggers
-export async function scheduled(event: ScheduledEvent, env: any, ctx: any) {
-  console.log("[scheduled] Warm-up started at", new Date().toISOString());
-  // Trigger the batch warm-up endpoint as a scheduled job
-  try {
-    const host = env && env.HOST ? env.HOST : "localhost:8787";
-    const protocol =
-      host.startsWith("localhost") || host.startsWith("127.0.0.1")
-        ? "http"
-        : "https";
-    const url = `${protocol}://${host}/api/growth-warm-batch?batch=1`;
-    await fetch(url, { method: "GET" });
-    console.log(`[scheduled] Triggered batch warm-up at ${url}`);
-  } catch (e) {
-    console.error("[scheduled] Failed to trigger batch warm-up", e);
-  }
 }
 
 // Helper to get/set cache, using KV if available (Cloudflare Workers)
