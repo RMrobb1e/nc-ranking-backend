@@ -408,13 +408,14 @@ app.post("/api/growth-top-players-warm", async (c) => {
         ? "http"
         : "https";
 
-    let url;
-    const origin = c.req.header("origin") || c.req.header("Origin") || "";
-    if (origin.includes("nc-ranking-backend.robbie-ad5.workers.dev")) {
-      url = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1`;
-    } else {
-      url = `http://localhost:8787/api/growth-top-players-warm-batch?batch=1`;
-    }
+    let url =
+      "https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1";
+    // const origin = c.req.header("origin") || c.req.header("Origin") || "";
+    // if (origin.includes("nc-ranking-backend.robbie-ad5.workers.dev")) {
+    //   url = `https://nc-ranking-backend.robbie-ad5.workers.dev/api/growth-top-players-warm-batch?batch=1`;
+    // } else {
+    //   url = `http://localhost:8787/api/growth-top-players-warm-batch?batch=1`;
+    // }
     console.log(
       `[warm] Triggering batch warming at ${url} from origin ${origin}`,
     );
