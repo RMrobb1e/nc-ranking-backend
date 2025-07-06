@@ -38,6 +38,7 @@ const config = {
     "https://rmrobb1e.github.io",
     "https://reru-nc-ranking.vercel.app",
     "http://localhost:3000",
+    "http://localhost:5500",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
@@ -192,7 +193,7 @@ app.get("/api/health", c => {
 
 // Giphy API key endpoint
 app.get("/api/giphy-key", c => {
-  const apiKey = c.env.GIPHY_API_KEY;
+  const apiKey = process.env.GIPHY_API_KEY;
   if (!apiKey) {
     return c.json({ error: "Giphy API key not configured" }, 500);
   }
@@ -348,15 +349,15 @@ app.get("/api/growth-top-1000", async c => {
 // Top players across all regions/weapons endpoint
 app.get("/api/growth-top-players", async c => {
   const regionCodeParam = c.req.query("regionCode");
-  const limit = parseInt(c.req.query("limit") || "1000");
+  // const limit = parseInt(c.req.query("limit") || "1000");
 
-  if (limit < 1 || limit > 10000) {
-    return c.json({ error: "Limit must be between 1 and 10000" }, 400);
-  }
+  // if (limit < 1 || limit > 10000) {
+  //   return c.json({ error: "Limit must be between 1 and 10000" }, 400);
+  // }
 
   const cacheKey = regionCodeParam
-    ? `growth-top-players-${regionCodeParam}-${limit}`
-    : `growth-top-players-${limit}`;
+    ? `growth-top-players-${regionCodeParam}`
+    : `growth-top-players`;
 
   const cachedData = cache.get(cacheKey);
   if (cachedData) {
@@ -428,7 +429,7 @@ app.get("/api/growth-top-players", async c => {
     uniqueItems.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     const result = {
-      items: uniqueItems.slice(0, limit),
+      items: uniqueItems,
       totalUnique: uniqueItems.length,
       totalFetched: allItems.length,
       regionCode: regionCodeParam || "all",
