@@ -3,7 +3,7 @@ set -e
 
 echo "🔧 Setting up AlwaysData environment..."
 
-ssh reru@reru.alwaysdata.net << 'EOF'
+ssh reru@ssh-reru.alwaysdata.net << 'EOF'
 # Create directory structure
 mkdir -p ~/www/nc-ranking
 cd ~/www/nc-ranking
