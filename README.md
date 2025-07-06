@@ -1,25 +1,69 @@
-# Cloudflare Workers OpenAPI 3.1
+# nc-ranking-backend
 
-This is a Cloudflare Worker with OpenAPI 3.1 using [chanfana](https://github.com/cloudflare/chanfana) and [Hono](https://github.com/honojs/hono).
+A backend API for Night Crows ranking data, built with [Hono](https://hono.dev/) and TypeScript.  
+Supports deployment to Node.js hosts (like AlwaysData) and Cloudflare Workers.
 
-This is an example project made to be used as a quick start into building OpenAPI compliant Workers that generates the
-`openapi.json` schema automatically from code and validates the incoming request to the defined parameters or request body.
+## Features
 
-## Get started
+- REST API endpoints for Night Crows ranking data
+- Caching until midnight for performance
+- CORS support for multiple frontends
+- Health and metadata endpoints
 
-1. Sign up for [Cloudflare Workers](https://workers.dev). The free tier is more than enough for most use cases.
-2. Clone this project and install dependencies with `npm install`
-3. Run `wrangler login` to login to your Cloudflare account in wrangler
-4. Run `wrangler deploy` to publish the API to Cloudflare Workers
+## Endpoints
 
-## Project structure
-
-1. Your main router is defined in `src/index.ts`.
-2. Each endpoint has its own file in `src/endpoints/`.
-3. For more information read the [chanfana documentation](https://chanfana.pages.dev/) and [Hono documentation](https://hono.dev/docs).
+- `GET /api/giphy-key` — Returns the GIPHY API key (from environment variable)
+- `GET /api/health` — Health check
+- `GET /api/metadata` — Returns regions, weapon types, and ranking types
+- `GET /api/growth?ign=&regionCode=` — Fetches growth data for a player
+- `GET /api/growth-page?page=&regionCode=` — Fetches paginated growth data
+- `GET /api/growth-top-1000?regionCode=` — Top 1000 players by growth
+- `GET /api/growth-top-players?regionCode=` — Top players by region and weapon type
 
 ## Development
 
-1. Run `wrangler dev` to start a local instance of the API.
-2. Open `http://localhost:8787/` in your browser to see the Swagger interface where you can try the endpoints.
-3. Changes made in the `src/` folder will automatically trigger the server to reload, you only need to refresh the Swagger interface.
+```sh
+# Install dependencies
+npm install
+
+# Build TypeScript
+npm run build
+
+# Start server (Node.js, after build)
+npm run start:hono
+```
+
+## Deployment
+
+### To AlwaysData or Node.js host
+
+1. Build the project:
+   ```sh
+   npm run build
+   ```
+2. Copy the `dist/` directory and all necessary files (except `node_modules`) to your server.
+3. On the server:
+   ```sh
+   npm install --production
+   node dist/index.js
+   ```
+   Or use a process manager like `pm2`.
+
+### To Cloudflare Workers
+
+1. Configure your `wrangler.toml` or `wrangler.jsonc`.
+2. Deploy:
+   ```sh
+   npm run deploy
+   ```
+
+## Environment Variables
+
+- `GIPHY_API_KEY` — Your GIPHY API key (required)
+
+Set this in your hosting provider’s environment variable settings.
+
+## Formatting
+
+This project uses [Prettier](https://prettier.io/) for code formatting.  
+See `.prettierrc` for
