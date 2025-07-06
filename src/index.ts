@@ -1,3 +1,4 @@
+import { serve } from "@hono/node-server";
 import { regions, weaponTypes, rankingTypes } from "./utils/constants";
 import { Hono } from "hono";
 
@@ -253,6 +254,12 @@ app.get("/api/growth-top-players", async (c) => {
     console.log(e);
     return c.json({ error: "Failed to fetch data" }, 500);
   }
+});
+
+// Start the server (Node.js)
+const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+serve({ fetch: app.fetch, port }, () => {
+  console.log(`Server running on http://localhost:${port}`);
 });
 
 export default app;
