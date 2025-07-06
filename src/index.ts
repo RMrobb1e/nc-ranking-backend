@@ -6,6 +6,7 @@ import { logger } from "hono/logger";
 import { timeout } from "hono/timeout";
 import { compress } from "hono/compress";
 import { secureHeaders } from "hono/secure-headers";
+import "dotenv/config";
 
 type Env = {
   GIPHY_API_KEY: string;
