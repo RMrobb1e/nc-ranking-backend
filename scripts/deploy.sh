@@ -14,6 +14,17 @@ rsync -avz --delete \
   --exclude '.git' \
   --exclude 'src' \
   --exclude '*.log' \
+  --exclude '.wrangler' \
+  --exclude '.github' \
+  --exclude 'scripts' \
+  --exclude '.eslintrc' \
+  --exclude '.gitignore' \
+  --exclude '.nvmrc' \
+  --exclude '.prettierrc' \
+  --exclude 'README.md' \
+  --exclude 'tsconfig.json' \
+  --exclude 'worker-configuration.d.ts' \
+  --exclude 'wrangler.jsonc' \
   ./ reru@ssh-reru.alwaysdata.net:~/www/nc-ranking/
 
 # Install dependencies and restart on server
