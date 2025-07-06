@@ -7,7 +7,6 @@ import { timeout } from "hono/timeout";
 import { compress } from "hono/compress";
 import { secureHeaders } from "hono/secure-headers";
 
-
 type Env = {
   GIPHY_API_KEY: string;
 };
@@ -55,9 +54,9 @@ class TTLCache {
   private cache = new Map<string, CacheItem>();
 
   set(key: string, data: any, ttlSeconds: number): void {
-    const expires = Date.now() + (ttlSeconds * 1000);
+    const expires = Date.now() + ttlSeconds * 1000;
     this.cache.set(key, { data, expires });
-    
+
     // Auto-cleanup expired entries
     setTimeout(() => {
       this.delete(key);
@@ -67,12 +66,12 @@ class TTLCache {
   get(key: string): any | null {
     const item = this.cache.get(key);
     if (!item) return null;
-    
+
     if (Date.now() > item.expires) {
       this.cache.delete(key);
       return null;
     }
-    
+
     return item.data;
   }
 
@@ -119,64 +118,70 @@ function sanitizeData(data: unknown): RankingData {
 }
 
 async function fetchWithRetry(
-  url: string, 
-  options: RequestInit = {}, 
+  url: string,
+  options: RequestInit = {},
   retries = config.MAX_RETRIES
 ): Promise<Response> {
   for (let i = 0; i < retries; i++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), config.REQUEST_TIMEOUT);
-      
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        config.REQUEST_TIMEOUT
+      );
+
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
         headers: {
           Referer: "https://www.nightcrows.com/en/ranking/level",
-          'User-Agent': 'Mozilla/5.0 (compatible; NightCrows-API/1.0)',
+          "User-Agent": "Mozilla/5.0 (compatible; NightCrows-API/1.0)",
           ...options.headers,
         },
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       return response;
     } catch (error) {
       console.warn(`Fetch attempt ${i + 1} failed for ${url}:`, error);
-      
+
       if (i === retries - 1) throw error;
-      
+
       // Exponential backoff with jitter
       const delay = config.RETRY_DELAY * Math.pow(2, i) + Math.random() * 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  
+
   throw new Error(`Failed to fetch after ${retries} attempts`);
 }
 
 // Middleware
 app.use("*", logger());
-app.use('*', compress());
-app.use('*', secureHeaders());
+app.use("*", compress());
+app.use("*", secureHeaders());
 app.use("*", timeout(config.REQUEST_TIMEOUT));
 
-app.use("/api/*", cors({
-  origin: (origin) => {
-    if (!origin) return null;
-    return config.ALLOWED_ORIGINS.includes(origin) ? origin : null;
-  },
-  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-}));
+app.use(
+  "/api/*",
+  cors({
+    origin: origin => {
+      if (!origin) return null;
+      return config.ALLOWED_ORIGINS.includes(origin) ? origin : null;
+    },
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
 // Health check endpoint
-app.get("/api/health", (c) => {
+app.get("/api/health", c => {
   return c.json({
     status: "ok",
     timestamp: new Date().toISOString(),
@@ -186,7 +191,7 @@ app.get("/api/health", (c) => {
 });
 
 // Giphy API key endpoint
-app.get("/api/giphy-key", (c) => {
+app.get("/api/giphy-key", c => {
   const apiKey = c.env.GIPHY_API_KEY;
   if (!apiKey) {
     return c.json({ error: "Giphy API key not configured" }, 500);
@@ -195,7 +200,7 @@ app.get("/api/giphy-key", (c) => {
 });
 
 // Metadata endpoint
-app.get("/api/metadata", (c) => {
+app.get("/api/metadata", c => {
   const data = {
     regions,
     weaponTypes,
@@ -206,17 +211,17 @@ app.get("/api/metadata", (c) => {
 });
 
 // Player growth lookup endpoint
-app.get("/api/growth", async (c) => {
+app.get("/api/growth", async c => {
   const ign = c.req.query("ign")?.trim();
   const regionCode = c.req.query("regionCode") || "0";
-  
+
   if (!ign) {
     return c.json({ error: "Missing or empty ign parameter" }, 400);
   }
 
   const cacheKey = `growth-${ign}-${regionCode}`.toLowerCase();
   const cachedData = cache.get(cacheKey);
-  
+
   if (cachedData) {
     return c.json(cachedData);
   }
@@ -227,61 +232,67 @@ app.get("/api/growth", async (c) => {
     const response = await fetchWithRetry(url);
     const data: unknown = await response.json();
     const sanitizedData = sanitizeData(data);
-    
+
     const ttl = getSecondsUntilMidnight();
     cache.set(cacheKey, sanitizedData, ttl);
-    
+
     return c.json(sanitizedData);
   } catch (error) {
     console.error("Error fetching growth data:", error);
-    return c.json({ 
-      error: "Failed to fetch growth data", 
-      details: error instanceof Error ? error.message : String(error) 
-    }, 500);
+    return c.json(
+      {
+        error: "Failed to fetch growth data",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      500
+    );
   }
 });
 
 // Growth page endpoint
-app.get("/api/growth-page", async (c) => {
+app.get("/api/growth-page", async c => {
   const page = parseInt(c.req.query("page") || "1");
   const regionCode = c.req.query("regionCode") || "0";
-  
+
   if (page < 1 || page > 100) {
     return c.json({ error: "Page must be between 1 and 100" }, 400);
   }
 
   const cacheKey = `growth-page-${page}-${regionCode}`;
   const cachedData = cache.get(cacheKey);
-  
+
   if (cachedData) {
     return c.json(cachedData);
   }
 
   const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}`;
-  
+
   try {
     const response = await fetchWithRetry(url);
     const data: unknown = await response.json();
     const sanitizedData = sanitizeData(data);
-    
+
     const ttl = getSecondsUntilMidnight();
     cache.set(cacheKey, sanitizedData, ttl);
-    
+
     return c.json(sanitizedData);
   } catch (error) {
     console.error("Error fetching growth page:", error);
-    return c.json({ 
-      error: "Failed to fetch growth page data", 
-      details: error instanceof Error ? error.message : String(error) 
-    }, 500);
+    return c.json(
+      {
+        error: "Failed to fetch growth page data",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      500
+    );
   }
 });
 
 // Top 1000 growth players endpoint
-app.get("/api/growth-top-1000", async (c) => {
+app.get("/api/growth-top-1000", async c => {
   const regionCode = c.req.query("regionCode") || "0";
   const cacheKey = `growth-top-1000-${regionCode}`;
-  
+
   const cachedData = cache.get(cacheKey);
   if (cachedData) {
     return c.json(cachedData);
@@ -292,7 +303,7 @@ app.get("/api/growth-top-1000", async (c) => {
     const fetchPromises = Array.from({ length: 10 }, (_, i) => {
       const page = i + 1;
       const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}`;
-      
+
       return fetchWithRetry(url)
         .then(response => response.json())
         .then((data: unknown) => {
@@ -306,44 +317,47 @@ app.get("/api/growth-top-1000", async (c) => {
     });
 
     const pagesItems = await Promise.all(fetchPromises);
-    
+
     for (const items of pagesItems) {
       allItems.push(...items);
     }
 
-    const result = { 
+    const result = {
       items: allItems.slice(0, 1000),
       totalFetched: allItems.length,
       regionCode,
       timestamp: new Date().toISOString(),
     };
-    
+
     const ttl = getSecondsUntilMidnight();
     cache.set(cacheKey, result, ttl);
-    
+
     return c.json(result);
   } catch (error) {
     console.error("Error fetching top 1000 growth data:", error);
-    return c.json({ 
-      error: "Failed to fetch top 1000 growth data", 
-      details: error instanceof Error ? error.message : String(error) 
-    }, 500);
+    return c.json(
+      {
+        error: "Failed to fetch top 1000 growth data",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      500
+    );
   }
 });
 
 // Top players across all regions/weapons endpoint
-app.get("/api/growth-top-players", async (c) => {
+app.get("/api/growth-top-players", async c => {
   const regionCodeParam = c.req.query("regionCode");
   const limit = parseInt(c.req.query("limit") || "1000");
-  
+
   if (limit < 1 || limit > 10000) {
     return c.json({ error: "Limit must be between 1 and 10000" }, 400);
   }
 
-  const cacheKey = regionCodeParam 
+  const cacheKey = regionCodeParam
     ? `growth-top-players-${regionCodeParam}-${limit}`
     : `growth-top-players-${limit}`;
-    
+
   const cachedData = cache.get(cacheKey);
   if (cachedData) {
     return c.json(cachedData);
@@ -356,7 +370,7 @@ app.get("/api/growth-top-players", async (c) => {
     for (const region of regions) {
       const regionCode = region.code;
       if (regionCode === 0) continue; // Skip 'ALL' region
-      
+
       if (regionCodeParam && String(regionCode) !== String(regionCodeParam)) {
         continue;
       }
@@ -368,7 +382,7 @@ app.get("/api/growth-top-players", async (c) => {
           Array.from({ length: 10 }, (_, i) => {
             const page = i + 1;
             const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}&weaponType=${weaponType}`;
-            
+
             return fetchWithRetry(url)
               .then(response => response.json())
               .then((data: unknown) => {
@@ -376,7 +390,10 @@ app.get("/api/growth-top-players", async (c) => {
                 return sanitizedData.pageProps?.rankingListData?.items || [];
               })
               .catch(error => {
-                console.error(`Error fetching region ${regionCode}, weapon ${weaponType}, page ${page}:`, error);
+                console.error(
+                  `Error fetching region ${regionCode}, weapon ${weaponType}, page ${page}:`,
+                  error
+                );
                 return [];
               });
           })
@@ -393,7 +410,7 @@ app.get("/api/growth-top-players", async (c) => {
     }
 
     const regionResults = await Promise.all(regionPromises);
-    
+
     for (const items of regionResults) {
       allItems.push(...items);
     }
@@ -424,24 +441,27 @@ app.get("/api/growth-top-players", async (c) => {
     return c.json(result);
   } catch (error) {
     console.error("Error fetching top players:", error);
-    return c.json({ 
-      error: "Failed to fetch top players data", 
-      details: error instanceof Error ? error.message : String(error) 
-    }, 500);
+    return c.json(
+      {
+        error: "Failed to fetch top players data",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      500
+    );
   }
 });
 
 // Cache management endpoints
-app.get("/api/cache/stats", (c) => {
+app.get("/api/cache/stats", c => {
   return c.json({
     size: cache.size(),
     timestamp: new Date().toISOString(),
   });
 });
 
-app.delete("/api/cache/clear", (c) => {
+app.delete("/api/cache/clear", c => {
   cache.clear();
-  return c.json({ 
+  return c.json({
     message: "Cache cleared successfully",
     timestamp: new Date().toISOString(),
   });
@@ -450,43 +470,40 @@ app.delete("/api/cache/clear", (c) => {
 // Global error handler
 app.onError((err, c) => {
   console.error("Unhandled error:", err);
-  return c.json({ 
-    error: "Internal server error", 
-    details: err.message,
-    timestamp: new Date().toISOString(),
-  }, 500);
+  return c.json(
+    {
+      error: "Internal server error",
+      details: err.message,
+      timestamp: new Date().toISOString(),
+    },
+    500
+  );
 });
 
 // 404 handler
-app.notFound((c) => {
-  return c.json({ 
-    error: "Not found", 
-    path: c.req.path,
-    timestamp: new Date().toISOString(),
-  }, 404);
+app.notFound(c => {
+  return c.json(
+    {
+      error: "Not found",
+      path: c.req.path,
+      timestamp: new Date().toISOString(),
+    },
+    404
+  );
 });
 
 // Start server
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-const host = process.env.HOST || 'localhost';
+const host = process.env.HOST || "localhost";
 
 // AlwaysData specific configuration
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === "production";
 
 if (isProduction) {
   // Production logging
-  console.log('🌐 Running in production mode');
+  console.log("🌐 Running in production mode");
   console.log(`🚀 Server will start on port ${port}`);
 }
-
-serve({ 
-  fetch: app.fetch, 
-  port: Number(port),
-  hostname: host
-}, () => {
-  console.log(`🚀 Server running on http://${host}:${port}`);
-});
-
 
 serve({ fetch: app.fetch, port }, () => {
   console.log(`🚀 Server running on http://localhost:${port}`);
