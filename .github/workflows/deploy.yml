@@ -1,0 +1,50 @@
+name: Deploy to AlwaysData
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Build project
+      run: npm run build
+    
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.7.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    
+    - name: Deploy to AlwaysData
+      run: |
+        rsync -avz --delete \
+          --exclude 'node_modules' \
+          --exclude '.git' \
+          --exclude 'src' \
+          --exclude '*.log' \
+          ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/www/nc-ranking/
+    
+    - name: Install dependencies and restart
+      run: |
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+        cd ~/www/nc-ranking
+        npm ci --only=production
+        pm2 restart nightcrows-api || pm2 start ecosystem.config.js
+        EOF

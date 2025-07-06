@@ -1,27 +1,65 @@
 {
-  "name": "cloudflare-workers-openapi",
-  "version": "0.0.1",
-  "private": true,
+  "name": "nightcrows-ranking-api",
+  "version": "1.0.0",
+  "description": "Night Crows game ranking API server built with Hono",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --format=esm --platform=node",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
-    "start:hono": "node dist/index.js",
-    "cf-typegen": "wrangler types"
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",    
+    "start:prod": "NODE_ENV=production node dist/index.js",
+    "deploy": "npm run build && npm run start:prod",
+    "postinstall": "npm run build",
+    "preview": "npm run build && npm run start",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0 --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rimraf dist"
   },
+  "keywords": [
+    "hono",
+    "api",
+    "typescript",
+    "nightcrows",
+    "ranking",
+    "game",
+    "server"
+  ],
+  "author": "RALM",
+  "license": "MIT",
   "dependencies": {
-    "@hono/node-server": "^1.15.0",
-    "chanfana": "^2.6.3",
-    "hono": "^4.6.20",
-    "zod": "^3.24.1"
+    "hono": "^4.0.0",
+    "@hono/node-server": "^1.8.0"
   },
   "devDependencies": {
-    "@types/node": "22.13.0",
-    "@types/service-worker-mock": "^2.0.4",
-    "esbuild": "^0.25.5",
-    "typescript": "^5.8.3",
-    "wrangler": "^4.18.0"
-  }
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "prettier": "^3.2.4",
+    "rimraf": "^5.0.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0",
+    "@vitest/coverage-v8": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/nightcrows-ranking-api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/nightcrows-ranking-api/issues"
+  },
+  "homepage": "https://github.com/yourusername/nightcrows-ranking-api#readme"
 }
