@@ -6,7 +6,8 @@ import { logger } from "hono/logger";
 import { timeout } from "hono/timeout";
 import { compress } from "hono/compress";
 import { secureHeaders } from "hono/secure-headers";
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config();
 
 type Env = {
   GIPHY_API_KEY: string;
@@ -38,9 +39,12 @@ const config = {
     "https://reru-nc-ranking.onrender.com",
     "https://rmrobb1e.github.io",
     "https://reru-nc-ranking.vercel.app",
+    "https://nc-ranking-react.vercel.app",
     "http://localhost:3000",
     "http://localhost:5500",
     "http://localhost:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
   ],
@@ -429,8 +433,14 @@ app.get("/api/growth-top-players", async c => {
     // Sort by score descending
     uniqueItems.sort((a, b) => (b.score || 0) - (a.score || 0));
 
+    // Normalize ranking - assign rank based on position after sorting
+    const rankedItems = uniqueItems.map((item, index) => ({
+      ...item,
+      rank: index + 1, // Assign rank starting from 1
+    }));
+
     const result = {
-      items: uniqueItems,
+      items: rankedItems,
       totalUnique: uniqueItems.length,
       totalFetched: allItems.length,
       regionCode: regionCodeParam || "all",

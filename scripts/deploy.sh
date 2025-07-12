@@ -25,6 +25,7 @@ rsync -avz --delete \
   --exclude 'tsconfig.json' \
   --exclude 'worker-configuration.d.ts' \
   --exclude 'wrangler.jsonc' \
+  --exclude 'esbuild.config.js' \
   ./ reru@ssh-reru.alwaysdata.net:~/www/nc-ranking/
 
 # Install dependencies and restart on server
