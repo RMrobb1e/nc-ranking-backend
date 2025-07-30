@@ -34,7 +34,7 @@ interface PlayerItem {
 
 // Configuration
 const config = {
-  NC_API_KEY: "ZEg21D2RPKjZ3xAZy0BZV",
+  NC_API_KEY: "e22vMYMjpRy42dioeJ9SB",
   ALLOWED_ORIGINS: [
     "https://reru-nc-ranking.onrender.com",
     "https://rmrobb1e.github.io",
