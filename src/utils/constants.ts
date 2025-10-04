@@ -32,6 +32,7 @@ export const weaponTypes = {
   Spear: 14,
   Dagger: 22,
   Rapier: 23,
+  Orb: 33,
 };
 
 export const rankingTypes = {
