@@ -22,7 +22,7 @@ export const regions = [
 ];
 
 export const weaponTypes = {
-  All: 0,
+  // All: 0,
   Bow: 21,
   OneHanded: 13,
   TwinSword: 12,
@@ -31,8 +31,8 @@ export const weaponTypes = {
   TwoHanded: 11,
   Spear: 14,
   Dagger: 22,
-  Rapier: 23,
   Orb: 33,
+  Rapier: 23,
 };
 
 export const rankingTypes = {
