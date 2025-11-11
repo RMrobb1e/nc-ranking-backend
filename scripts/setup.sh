@@ -41,6 +41,7 @@ cat > .env << 'EOL'
 NODE_ENV=production
 PORT=3000
 GIPHY_API_KEY=your_giphy_api_key_here
+NC_API_KEY=nDZRLdB83mDw8Gw1IThvg
 EOL
 
 echo "✅ Setup complete! Don't forget to update .env with your actual API keys"

@@ -60,6 +60,7 @@ npm run start:hono
 ## Environment Variables
 
 - `GIPHY_API_KEY` — Your GIPHY API key (required)
+- `NC_API_KEY` — Your NC API key (required)
 
 Set this in your hosting provider’s environment variable settings.
 

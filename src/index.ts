@@ -11,6 +11,7 @@ dotenv.config();
 
 type Env = {
   GIPHY_API_KEY: string;
+  NC_API_KEY: string;
 };
 
 interface CacheItem<T = any> {
@@ -34,7 +35,7 @@ interface PlayerItem {
 
 // Configuration
 const config = {
-  NC_API_KEY: "nDZRLdB83mDw8Gw1IThvg",
+  NC_API_KEY: process.env.NC_API_KEY,
   ALLOWED_ORIGINS: [
     "https://reru-nc-ranking.onrender.com",
     "https://rmrobb1e.github.io",

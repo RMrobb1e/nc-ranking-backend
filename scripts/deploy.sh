@@ -32,7 +32,7 @@ rsync -avz --delete \
 echo "🔄 Installing dependencies on server..."
 ssh reru@ssh-reru.alwaysdata.net << 'EOF'
 cd ~/www/nc-ranking
-npm ci --only=production
+npm ci --only=production --omit=dev
 pm2 restart nightcrows-api || pm2 start dist/index.js --name nightcrows-api
 EOF
 
