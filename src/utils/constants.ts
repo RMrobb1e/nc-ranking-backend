@@ -7,10 +7,10 @@ export const regions = [
     name: "ASIA I",
     code: 2010,
   },
-  {
-    name: "ASIA II",
-    code: 2020,
-  },
+  // {
+  //   name: "ASIA II",
+  //   code: 2020,
+  // },
   {
     name: "NA/EU",
     code: 3010,
