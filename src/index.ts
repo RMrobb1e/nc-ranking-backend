@@ -391,6 +391,8 @@ app.get("/api/growth-top-players", async c => {
           const page = i + 1;
           const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}`;
 
+          console.log({ url });
+
           return fetchWithRetry(url)
             .then(response => response.json())
             .then((data: unknown) => {
@@ -434,16 +436,16 @@ app.get("/api/growth-top-players", async c => {
     );
 
     // Sort by score descending
-    uniqueItems.sort((a, b) => (b.rank || 0) - (a.rank || 0));
+    // uniqueItems.sort((a, b) => (b.rank || 0) - (a.rank || 0));
 
     // Normalize ranking - assign rank based on position after sorting
-    const rankedItems = uniqueItems.map((item, index) => ({
-      ...item,
-      rank: index + 1, // Assign rank starting from 1
-    }));
+    // const rankedItems = uniqueItems.map((item, index) => ({
+    //   ...item,
+    //   rank: index + 1, // Assign rank starting from 1
+    // }));
 
     const result = {
-      items: rankedItems,
+      items: uniqueItems,
       totalUnique: uniqueItems.length,
       totalFetched: allItems.length,
       regionCode: regionCodeParam || "all",
