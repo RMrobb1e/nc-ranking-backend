@@ -383,40 +383,40 @@ app.get("/api/growth-top-players", async c => {
         continue;
       }
 
-      for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
-        if (weaponTypeName === "All") continue; // Skip 'All' weapon type
+      // for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
+      //   if (weaponTypeName === "All") continue; // Skip 'All' weapon type
 
-        const weaponPromise = Promise.all(
-          Array.from({ length: 10 }, (_, i) => {
-            const page = i + 1;
-            const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}&weaponType=${weaponType}`;
+      const weaponPromise = Promise.all(
+        Array.from({ length: 10 }, (_, i) => {
+          const page = i + 1;
+          const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}`;
 
-            return fetchWithRetry(url)
-              .then(response => response.json())
-              .then((data: unknown) => {
-                const sanitizedData = sanitizeData(data);
-                return sanitizedData.pageProps?.rankingListData?.items || [];
-              })
-              .catch(error => {
-                console.error(
-                  `Error fetching region ${regionCode}, weapon ${weaponType}, page ${page}:`,
-                  error
-                );
-                return [];
-              });
-          })
-        ).then(pagesItems => {
-          const items: PlayerItem[] = [];
-          for (const pageItems of pagesItems) {
-            items.push(...pageItems);
-          }
+          return fetchWithRetry(url)
+            .then(response => response.json())
+            .then((data: unknown) => {
+              const sanitizedData = sanitizeData(data);
+              return sanitizedData.pageProps?.rankingListData?.items || [];
+            })
+            .catch(error => {
+              console.error(
+                `Error fetching region ${regionCode}, page ${page}:`,
+                error
+              );
+              return [];
+            });
+        })
+      ).then(pagesItems => {
+        const items: PlayerItem[] = [];
+        for (const pageItems of pagesItems) {
+          items.push(...pageItems);
+        }
 
-          return items;
-        });
+        return items;
+      });
 
-        regionPromises.push(weaponPromise);
-      }
+      regionPromises.push(weaponPromise);
     }
+    // }
 
     const regionResults = await Promise.all(regionPromises);
 
