@@ -31,6 +31,7 @@ interface PlayerItem {
   RegionID: number;
   CharacterName: string;
   score?: number;
+  rank?: number;
 }
 
 // Configuration
@@ -409,6 +410,7 @@ app.get("/api/growth-top-players", async c => {
           for (const pageItems of pagesItems) {
             items.push(...pageItems);
           }
+
           return items;
         });
 
@@ -432,7 +434,7 @@ app.get("/api/growth-top-players", async c => {
     );
 
     // Sort by score descending
-    uniqueItems.sort((a, b) => (b.score || 0) - (a.score || 0));
+    uniqueItems.sort((a, b) => (b.rank || 0) - (a.rank || 0));
 
     // Normalize ranking - assign rank based on position after sorting
     const rankedItems = uniqueItems.map((item, index) => ({
