@@ -32,6 +32,8 @@ interface PlayerItem {
   CharacterName: string;
   score?: number;
   rank?: number;
+  weaponType?: number;
+  weaponTypeRank?: number;
 }
 
 // Configuration
@@ -356,11 +358,6 @@ app.get("/api/growth-top-1000", async c => {
 // Top players across all regions/weapons endpoint
 app.get("/api/growth-top-players", async c => {
   const regionCodeParam = c.req.query("regionCode");
-  // const limit = parseInt(c.req.query("limit") || "1000");
-
-  // if (limit < 1 || limit > 10000) {
-  //   return c.json({ error: "Limit must be between 1 and 10000" }, 400);
-  // }
 
   const cacheKey = regionCodeParam
     ? `growth-top-players-${regionCodeParam}`
@@ -372,6 +369,49 @@ app.get("/api/growth-top-players", async c => {
   }
 
   try {
+    // Step 1: Fetch top 1000 players without weapon type for normalization
+    const top1000Items: PlayerItem[] = [];
+    const regionCodeForTop1000 = regionCodeParam || "0";
+    
+    const top1000CacheKey = `growth-top-1000-${regionCodeForTop1000}`;
+    let top1000Data = cache.get(top1000CacheKey);
+    
+    if (!top1000Data) {
+      // Fetch top 1000 if not cached
+      const top1000Promises = Array.from({ length: 10 }, (_, i) => {
+        const page = i + 1;
+        const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCodeForTop1000}&page=${page}`;
+
+        return fetchWithRetry(url)
+          .then(response => response.json())
+          .then((data: unknown) => {
+            const sanitizedData = sanitizeData(data);
+            return sanitizedData.pageProps?.rankingListData?.items || [];
+          })
+          .catch(error => {
+            console.error(`Error fetching top 1000 page ${page}:`, error);
+            return [];
+          });
+      });
+
+      const top1000PagesItems = await Promise.all(top1000Promises);
+      for (const items of top1000PagesItems) {
+        top1000Items.push(...items);
+      }
+    } else {
+      top1000Items.push(...(top1000Data.items || []));
+    }
+
+    // Create a map of top 1000 players with their ranks
+    const top1000Map = new Map<string, { item: PlayerItem; rank: number }>();
+    top1000Items.slice(0, 1000).forEach((item, index) => {
+      if (item.CharacterName && item.RegionID) {
+        const key = `${item.RegionID}-${item.CharacterName}`;
+        top1000Map.set(key, { item, rank: index + 1 });
+      }
+    });
+
+    // Step 2: Fetch all players with weapon types
     const allItems: PlayerItem[] = [];
     const regionPromises = [];
 
@@ -383,42 +423,46 @@ app.get("/api/growth-top-players", async c => {
         continue;
       }
 
-      // for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
-      //   if (weaponTypeName === "All") continue; // Skip 'All' weapon type
+      for (const [weaponTypeName, weaponType] of Object.entries(weaponTypes)) {
+        if (weaponTypeName === "All") continue; // Skip 'All' weapon type
 
-      const weaponPromise = Promise.all(
-        Array.from({ length: 10 }, (_, i) => {
-          const page = i + 1;
-          const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&page=${page}`;
+        const weaponPromise = Promise.all(
+          Array.from({ length: 10 }, (_, i) => {
+            const page = i + 1;
+            const url = `https://www.nightcrows.com/_next/data/${config.NC_API_KEY}/en/ranking/growth.json?rankingType=growth&regionCode=${regionCode}&weaponType=${weaponType}&page=${page}`;
 
-          console.log({ url });
+            return fetchWithRetry(url)
+              .then(response => response.json())
+              .then((data: unknown) => {
+                const sanitizedData = sanitizeData(data);
+                return sanitizedData.pageProps?.rankingListData?.items || [];
+              })
+              .catch(error => {
+                console.error(
+                  `Error fetching region ${regionCode}, weapon ${weaponType}, page ${page}:`,
+                  error
+                );
+                return [];
+              });
+          })
+        ).then(pagesItems => {
+          const items: PlayerItem[] = [];
+          for (const pageItems of pagesItems) {
+            // Add weapon type and weapon type rank to each item
+            const itemsWithWeaponType = pageItems.map((item: any) => ({
+              ...item,
+              weaponType,
+              weaponTypeRank: item.rank,
+            }));
+            items.push(...itemsWithWeaponType);
+          }
 
-          return fetchWithRetry(url)
-            .then(response => response.json())
-            .then((data: unknown) => {
-              const sanitizedData = sanitizeData(data);
-              return sanitizedData.pageProps?.rankingListData?.items || [];
-            })
-            .catch(error => {
-              console.error(
-                `Error fetching region ${regionCode}, page ${page}:`,
-                error
-              );
-              return [];
-            });
-        })
-      ).then(pagesItems => {
-        const items: PlayerItem[] = [];
-        for (const pageItems of pagesItems) {
-          items.push(...pageItems);
-        }
+          return items;
+        });
 
-        return items;
-      });
-
-      regionPromises.push(weaponPromise);
+        regionPromises.push(weaponPromise);
+      }
     }
-    // }
 
     const regionResults = await Promise.all(regionPromises);
 
@@ -426,28 +470,91 @@ app.get("/api/growth-top-players", async c => {
       allItems.push(...items);
     }
 
-    // Remove duplicates based on RegionID and CharacterName
-    const uniqueItems = Array.from(
-      new Map(
-        allItems
-          .filter(item => item.CharacterName && item.RegionID)
-          .map(item => [`${item.RegionID}-${item.CharacterName}`, item])
-      ).values()
-    );
+    // Step 3: Remove duplicates based on RegionID and CharacterName
+    // Keep the item with the best (lowest) weapon type rank
+    const uniqueItemsMap = new Map<string, PlayerItem>();
+    
+    for (const item of allItems) {
+      if (!item.CharacterName || !item.RegionID) continue;
+      
+      const key = `${item.RegionID}-${item.CharacterName}`;
+      const existing = uniqueItemsMap.get(key);
+      
+      if (!existing || (item.weaponTypeRank && existing.weaponTypeRank && item.weaponTypeRank < existing.weaponTypeRank)) {
+        uniqueItemsMap.set(key, item);
+      }
+    }
 
-    // Sort by score descending
-    // uniqueItems.sort((a, b) => (b.rank || 0) - (a.rank || 0));
+    const uniqueItems = Array.from(uniqueItemsMap.values());
 
-    // Normalize ranking - assign rank based on position after sorting
-    // const rankedItems = uniqueItems.map((item, index) => ({
-    //   ...item,
-    //   rank: index + 1, // Assign rank starting from 1
-    // }));
+    // Step 4: Normalize ranking
+    // Separate players into two groups: those in top 1000 and those not
+    const playersInTop1000: PlayerItem[] = [];
+    const playersNotInTop1000: PlayerItem[] = [];
+
+    for (const item of uniqueItems) {
+      const key = `${item.RegionID}-${item.CharacterName}`;
+      const top1000Entry = top1000Map.get(key);
+      
+      if (top1000Entry) {
+        // Player is in top 1000, use their top 1000 rank
+        playersInTop1000.push({
+          ...item,
+          rank: top1000Entry.rank,
+        });
+      } else {
+        // Player is not in top 1000
+        playersNotInTop1000.push(item);
+      }
+    }
+
+    // Step 5: For players not in top 1000, group by weapon type rank and sort alphabetically
+    const playersByWeaponRank = new Map<number, PlayerItem[]>();
+    
+    for (const player of playersNotInTop1000) {
+      const weaponRank = player.weaponTypeRank || 999999; // Use high number if no rank
+      if (!playersByWeaponRank.has(weaponRank)) {
+        playersByWeaponRank.set(weaponRank, []);
+      }
+      playersByWeaponRank.get(weaponRank)!.push(player);
+    }
+
+    // Sort each group alphabetically by CharacterName
+    for (const [, players] of playersByWeaponRank.entries()) {
+      players.sort((a, b) => {
+        const nameA = (a.CharacterName || "").toLowerCase();
+        const nameB = (b.CharacterName || "").toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+    }
+
+    // Step 6: Assign unique ranks sequentially
+    // First, add players from top 1000 (already have ranks)
+    const rankedItems: PlayerItem[] = [...playersInTop1000];
+    
+    // Then, add players not in top 1000, sorted by weapon type rank, then alphabetically
+    const sortedWeaponRanks = Array.from(playersByWeaponRank.keys()).sort((a, b) => a - b);
+    let currentRank = 1001; // Start ranking after top 1000
+    
+    for (const weaponRank of sortedWeaponRanks) {
+      const players = playersByWeaponRank.get(weaponRank)!;
+      for (const player of players) {
+        rankedItems.push({
+          ...player,
+          rank: currentRank++,
+        });
+      }
+    }
+
+    // Sort final result by rank
+    rankedItems.sort((a, b) => (a.rank || 999999) - (b.rank || 999999));
 
     const result = {
-      items: uniqueItems,
-      totalUnique: uniqueItems.length,
+      items: rankedItems,
+      totalUnique: rankedItems.length,
       totalFetched: allItems.length,
+      top1000Count: playersInTop1000.length,
+      remainingCount: playersNotInTop1000.length,
       regionCode: regionCodeParam || "all",
       timestamp: new Date().toISOString(),
     };
