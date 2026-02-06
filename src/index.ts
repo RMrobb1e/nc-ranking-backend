@@ -38,7 +38,7 @@ interface PlayerItem {
 
 // Configuration
 const config = {
-  NC_API_KEY: "yFzhYrwHQbSkfg48hZTju",
+  NC_API_KEY: "eHarTdo38ikY-HjtVAipj",
   ALLOWED_ORIGINS: [
     "https://reru-nc-ranking.onrender.com",
     "https://rmrobb1e.github.io",
@@ -372,10 +372,10 @@ app.get("/api/growth-top-players", async c => {
     // Step 1: Fetch top 1000 players without weapon type for normalization
     const top1000Items: PlayerItem[] = [];
     const regionCodeForTop1000 = regionCodeParam || "0";
-    
+
     const top1000CacheKey = `growth-top-1000-${regionCodeForTop1000}`;
     let top1000Data = cache.get(top1000CacheKey);
-    
+
     if (!top1000Data) {
       // Fetch top 1000 if not cached
       const top1000Promises = Array.from({ length: 10 }, (_, i) => {
@@ -473,14 +473,19 @@ app.get("/api/growth-top-players", async c => {
     // Step 3: Remove duplicates based on RegionID and CharacterName
     // Keep the item with the best (lowest) weapon type rank
     const uniqueItemsMap = new Map<string, PlayerItem>();
-    
+
     for (const item of allItems) {
       if (!item.CharacterName || !item.RegionID) continue;
-      
+
       const key = `${item.RegionID}-${item.CharacterName}`;
       const existing = uniqueItemsMap.get(key);
-      
-      if (!existing || (item.weaponTypeRank && existing.weaponTypeRank && item.weaponTypeRank < existing.weaponTypeRank)) {
+
+      if (
+        !existing ||
+        (item.weaponTypeRank &&
+          existing.weaponTypeRank &&
+          item.weaponTypeRank < existing.weaponTypeRank)
+      ) {
         uniqueItemsMap.set(key, item);
       }
     }
@@ -495,7 +500,7 @@ app.get("/api/growth-top-players", async c => {
     for (const item of uniqueItems) {
       const key = `${item.RegionID}-${item.CharacterName}`;
       const top1000Entry = top1000Map.get(key);
-      
+
       if (top1000Entry) {
         // Player is in top 1000, use their top 1000 rank
         playersInTop1000.push({
@@ -510,7 +515,7 @@ app.get("/api/growth-top-players", async c => {
 
     // Step 5: For players not in top 1000, group by weapon type rank and sort alphabetically
     const playersByWeaponRank = new Map<number, PlayerItem[]>();
-    
+
     for (const player of playersNotInTop1000) {
       const weaponRank = player.weaponTypeRank || 999999; // Use high number if no rank
       if (!playersByWeaponRank.has(weaponRank)) {
@@ -531,11 +536,13 @@ app.get("/api/growth-top-players", async c => {
     // Step 6: Assign unique ranks sequentially
     // First, add players from top 1000 (already have ranks)
     const rankedItems: PlayerItem[] = [...playersInTop1000];
-    
+
     // Then, add players not in top 1000, sorted by weapon type rank, then alphabetically
-    const sortedWeaponRanks = Array.from(playersByWeaponRank.keys()).sort((a, b) => a - b);
+    const sortedWeaponRanks = Array.from(playersByWeaponRank.keys()).sort(
+      (a, b) => a - b
+    );
     let currentRank = 1001; // Start ranking after top 1000
-    
+
     for (const weaponRank of sortedWeaponRanks) {
       const players = playersByWeaponRank.get(weaponRank)!;
       for (const player of players) {
