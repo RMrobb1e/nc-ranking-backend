@@ -23,6 +23,7 @@ export const regions = [
 
 export const weaponTypes = {
   // All: 0,
+  Cannon: 15,
   Bow: 21,
   OneHanded: 13,
   TwinSword: 12,
